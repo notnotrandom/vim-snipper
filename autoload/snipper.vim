@@ -28,17 +28,28 @@
 function snipper#TriggerSnippet()
 	let l:line = getline(".")
   let l:col = col(".")
+  let l:charCol = charcol(".")
   echom l:col
 
   if l:col == 1 || l:line[l:col - 2] =~ '\m\W'
+    " If we are on column 1, or if the char in the column immediately before
+    " the cursor is non-alphanumeric, then there is no snippet to expand. So
+    " just return an actual <Tab> character.
     return "\<Tab>"
   else
+    " Otherwise, before the cursor there is a potential trigger. So I go find
+    " out its bounds (array indexes). Basically, start at the char immediately
+    " before the cursor, and keep going back until a non-alphanumeric char is
+    " found.
     let l:triggerEndCharIdx = l:col - 2
     let l:prevCharIdx = l:triggerEndCharIdx
 
     while l:prevCharIdx >= 1 && l:line[l:prevCharIdx - 1] =~ '\m\w'
       let l:prevCharIdx -= 1
     endwhile
+
+    " Now, after the above while loop, l:prevCharIdx contain the array idx of
+    " the first character of the trigger word.
   endif
 
   let l:triggerLength = l:triggerEndCharIdx - l:prevCharIdx + 1
@@ -50,7 +61,8 @@ function snipper#TriggerSnippet()
   else
     let l:beforeTrigger = ''
   endif
-  if l:triggerEndCharIdx < strchars(l:line)
+
+  if l:triggerEndCharIdx < strcharlen(l:line)
     let l:afterTrigger = l:line[l:triggerEndCharIdx + 1 : ]
   else
     let l:afterTrigger = ''
@@ -58,7 +70,7 @@ function snipper#TriggerSnippet()
 
   if l:trigger == 'ra'
     call setline(".", l:beforeTrigger . "\\rightarrow" . l:afterTrigger)
-    call setcharpos('.', [0, line("."), l:col + 11 - l:triggerLength])
+    call setcharpos('.', [0, line("."), l:charCol + 11 - l:triggerLength])
     return ''
   else
     return "\<Tab>"
