@@ -26,10 +26,17 @@
 "************************************************************************
 
 function snipper#TriggerSnippet()
-	let l:line = getline(".")
+	let l:line = getline(".") " Current line.
+
+  " col(".") returns the column the cursor is at, starting at 1. It counts
+  " *byte* positions, not visible char positions. charcol(".") does the same
+  " thing, but counting char positions. This is needed when the cursor is to
+  " be placed after the expanded snippet, if prior to the snippet expansion
+  " point, the line contains non-ascii characters. In such a case, the values
+  " of col and charcol will differ -- and as we see chars, not bytes, it is
+  " the latter that must be used.
   let l:col = col(".")
   let l:charCol = charcol(".")
-  echom l:col
 
   if l:col == 1 || l:line[l:col - 2] =~ '\m\W'
     " If we are on column 1, or if the char in the column immediately before
@@ -56,12 +63,19 @@ function snipper#TriggerSnippet()
   let l:trigger = strpart(l:line, l:prevCharIdx, l:triggerLength) " trigger must be ascii only
   echom l:trigger
 
+  " The variable l:beforeTrigger contains that part of the line that comes
+  " before the trigger text, if any. The reason we need an if condition is
+  " because if l:prevCharIdx = 0, then doing l:line[0 : l:prevCharIdx - 1]
+  " results in l:line[0:-1], which returns the entire line...
   if l:prevCharIdx > 0
     let l:beforeTrigger = l:line[0 : l:prevCharIdx - 1]
   else
     let l:beforeTrigger = ''
   endif
 
+  " The variable l:afterTrigger contains that part of the line that comes
+  " after the trigger text, if any. The reason we need an if condition is to
+  " avoid an "array index out of bounds" error...
   if l:triggerEndCharIdx < strcharlen(l:line)
     let l:afterTrigger = l:line[l:triggerEndCharIdx + 1 : ]
   else
@@ -69,8 +83,9 @@ function snipper#TriggerSnippet()
   endif
 
   if l:trigger == 'ra'
-    call setline(".", l:beforeTrigger . "\\rightarrow" . l:afterTrigger)
-    call setcharpos('.', [0, line("."), l:charCol + 11 - l:triggerLength])
+    let l:triggerExpansion = "\\rightarrow"
+    call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
+    call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
     return ''
   else
     return "\<Tab>"
