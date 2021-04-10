@@ -30,4 +30,8 @@ if exists('s:vim_snipper_loaded')
 endif
 let s:vim_snipper_loaded = 1
 
+" Set the filetype for .snippets files. Set also the foldmethod to indent.
+au BufRead,BufNewFile *.snippets\= set ft=snippet
+au FileType snippet setl noet fdm=indent
+
 inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>

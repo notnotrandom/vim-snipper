@@ -25,8 +25,124 @@
 "
 "************************************************************************
 
+" Self-explanatory.
+let g:vim_snipper#commentLinePattern = '\m^#'
+let g:vim_snipper#emptyLinePattern = '\m^$'
+
+" Matches lines like 'snippet trigger "doc string"', with the doc string
+" optional.
+let g:vim_snipper#snippetDeclarationLinePattern = '\m^snippet \zs\S\+\ze\(\s\|$\)'
+
+let g:vim_snipper#snippetLinePattern = '\m^\t\zs.*\ze'
+
+let s:snippets = {}
+
+let s:snippets_dir = fnameescape(expand("~/.vim/snippets"))
+
+function snipper#BuildSnippetDict()
+  " If .snippet files have been parsed before, then do not parse them again.
+  if len(s:snippets) != 0
+    return
+  endif
+
+  if filereadable(s:snippets_dir . "/" . "_.snippets")
+    call snipper#ParseSnippetFile(s:snippets_dir . "/" . "_.snippets")
+  endif
+
+  if &filetype != "" && filereadable(s:snippets_dir . "/" . &filetype . ".snippets")
+    call snipper#ParseSnippetFile(s:snippets_dir . "/" . &filetype . ".snippets")
+  endif
+endfunction
+
+function snipper#ParseSnippetFile(snipFile)
+  let l:currentSnippetKey = ""
+  let l:snippetLinesList = []
+
+  for line in readfile(a:snipFile)
+    if line =~ g:vim_snipper#emptyLinePattern
+      throw "EmptyLineOnSnippetFile"
+    elseif line =~ g:vim_snipper#commentLinePattern
+      continue " Skip comments.
+    endif
+
+    let l:aux = matchstr(line, g:vim_snipper#snippetDeclarationLinePattern)
+    if l:aux != ""
+      " We found a "snippet trigger" line. So first, check to see if we have
+      " found that trigger before. If so, throw up error, has multiple snips
+      " are not supported.
+      if has_key(s:snippets, l:aux) == v:true
+        throw "DuplicateSnippetKeyFound"
+        return
+      endif
+
+      " Next, if we had previously found a trigger, then the new trigger marks
+      " the end of the previous trigger's expansion.
+      if l:currentSnippetKey != ""
+        if len(l:snippetLinesList) > 0
+          let s:snippets[l:currentSnippetKey] = l:snippetLinesList
+        else
+          " Control reaches when there is a previous trigger, but no expansion
+          " for it. Hence, throw error.
+          throw "FoundTriggerWithoutExpansion"
+        endif
+      endif
+
+      " Finally, as we have found a new trigger, the array (List) where we
+      " collect the expansion line(s) is reset to empty.
+      let l:snippetLinesList = []
+      " And the current snippet key takes the value of trigger we found with
+      " the matchstr() above.
+      let l:currentSnippetKey = l:aux
+    else
+      " We didn't find a line like "^snippet trigger ...", so look for other
+      " possibilities...
+
+      let l:aux = matchstr(line, g:vim_snipper#snippetLinePattern)
+      if l:aux != ""
+        " We found a line that starts with a <Tab>; i.e., it is part of the
+        " expansion of a snippet. So add it to the list of expansion lines,
+        " and continue onto to the next line.
+        call add(l:snippetLinesList, l:aux)
+        continue
+      else
+        " We found a line that is not a comment, is not a "snippet trigger"
+        " line, and does not start with a <Tab>. So throw error.
+        throw "InvalidLineFound"
+      endif
+    endif
+  endfor
+
+  " When we reach the end of the .snippet file, so check if there is any
+  " pending trigger with body. If so, add them to the s:snippets dictionary.
+  if l:currentSnippetKey != ""
+    if len(l:snippetLinesList) > 0
+      let s:snippets[l:currentSnippetKey] = l:snippetLinesList
+    else
+      " Control reaches when there is a previous trigger, but no expansion
+      " for it. Hence, throw error.
+      throw "FoundTriggerWithoutExpansion"
+    endif
+  endif
+  
+endfunction
+
 function snipper#TriggerSnippet()
+  if len(s:snippets) == 0
+    try
+      call snipper#BuildSnippetDict()
+    catch /^DuplicateSnippetKeyFound$/
+      echoerr "Duplicate snippet key found!"
+    catch /^EmptyLineOnSnippetFile$/
+      echoerr "Empty lines not allowed in snippet files!"
+    catch /^FoundTriggerWithoutExpansion$/
+      echoerr "Found trigger without expansion!"
+    catch /^InvalidLineFound$/
+      echoerr "Invalid snippet line found!"
+    endtry
+  endif
+
 	let l:line = getline(".") " Current line.
+  let l:indent = indent(line("."))
 
   " col(".") returns the column the cursor is at, starting at 1. It counts
   " *byte* positions, not visible char positions. charcol(".") does the same
@@ -61,7 +177,6 @@ function snipper#TriggerSnippet()
 
   let l:triggerLength = l:triggerEndCharIdx - l:prevCharIdx + 1
   let l:trigger = strpart(l:line, l:prevCharIdx, l:triggerLength) " trigger must be ascii only
-  echom l:trigger
 
   " The variable l:beforeTrigger contains that part of the line that comes
   " before the trigger text, if any. The reason we need an if condition is
@@ -82,10 +197,10 @@ function snipper#TriggerSnippet()
     let l:afterTrigger = ''
   endif
 
-  if l:trigger == 'ra'
-    let l:triggerExpansion = "\\rightarrow"
-    call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
-    call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
+  if has_key(s:snippets, l:trigger) == v:true
+    let l:triggerExpansionList = s:snippets[l:trigger]
+    call setline(".", l:beforeTrigger . l:triggerExpansionList[0] . l:afterTrigger)
+    call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansionList[0]) - l:triggerLength])
     return ''
   else
     return "\<Tab>"
