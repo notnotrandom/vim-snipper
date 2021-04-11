@@ -123,7 +123,29 @@ function snipper#ParseSnippetFile(snipFile)
       throw "FoundTriggerWithoutExpansion"
     endif
   endif
-  
+endfunction
+
+" Taken from M. Sanders' snipMate, and modified.
+function snipper#ProcessSnippet(snip)
+	let snippet = a:snip
+	" Evaluate eval (`...`) expressions.
+	" Backquotes prefixed with a backslash "\" are ignored.
+	" Using a loop here instead of a regex fixes a bug with nested "\=".
+	if stridx(snippet, '`') != -1
+		while match(snippet, '\(^\|[^\\]\)`.\{-}[^\\]`') != -1
+			let snippet = substitute(snippet, '\(^\|[^\\]\)\zs`.\{-}[^\\]`\ze',
+		                \ substitute(eval(matchstr(snippet, '\(^\|[^\\]\)`\zs.\{-}[^\\]\ze`')),
+		                \ "\n\\%$", '', ''), '')
+		endw
+		let snippet = substitute(snippet, "\r", "\n", 'g')
+		let snippet = substitute(snippet, '\\`', '`', 'g')
+	endif
+
+	if &expandtab " Expand tabs to spaces if 'expandtab' is set.
+		return substitute(snippet, '\t',
+          \ repeat(' ', &softtabstop ? &softtabstop : &shiftwidth), 'g')
+	endif
+	return snippet
 endfunction
 
 function snipper#TriggerSnippet()
@@ -198,9 +220,9 @@ function snipper#TriggerSnippet()
   endif
 
   if has_key(s:snippets, l:trigger) == v:true
-    let l:triggerExpansionList = s:snippets[l:trigger]
-    call setline(".", l:beforeTrigger . l:triggerExpansionList[0] . l:afterTrigger)
-    call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansionList[0]) - l:triggerLength])
+    let l:triggerExpansion = snipper#ProcessSnippet(s:snippets[l:trigger][0])
+    call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
+    call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
     return ''
   else
     return "\<Tab>"
