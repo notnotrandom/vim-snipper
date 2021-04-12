@@ -141,6 +141,9 @@ function snipper#ProcessSnippet(snip)
 		let snippet = substitute(snippet, '\\`', '`', 'g')
 	endif
 
+  let snippet = substitute(snippet, '\([^\\]\)${\d\{1}\(:[^}]\+\)\?}', '\1', "g")
+  let snippet = substitute(snippet, '\([^\\]\)$\d\{1}', '\1', "g")
+
 	if &expandtab " Expand tabs to spaces if 'expandtab' is set.
 		return substitute(snippet, '\t',
           \ repeat(' ', &softtabstop ? &softtabstop : &shiftwidth), 'g')
@@ -164,7 +167,8 @@ function snipper#TriggerSnippet()
   endif
 
 	let l:line = getline(".") " Current line.
-  let l:indent = indent(line("."))
+  let l:currLineNum = line(".")
+  " let l:indent = indent(l:currLineNum)
 
   " col(".") returns the column the cursor is at, starting at 1. It counts
   " *byte* positions, not visible char positions. charcol(".") does the same
@@ -220,9 +224,20 @@ function snipper#TriggerSnippet()
   endif
 
   if has_key(s:snippets, l:trigger) == v:true
-    let l:triggerExpansion = snipper#ProcessSnippet(s:snippets[l:trigger][0])
-    call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
-    call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
+    let l:triggerExpansion = snipper#ProcessSnippet(join(s:snippets[l:trigger], "\n"))
+    let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
+
+    call setline(".", l:beforeTrigger . l:triggerProcessedList[0] . l:afterTrigger)
+    if len(l:triggerProcessedList) == 1
+      call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
+    else
+      let l:numOfInsertedLines = len(l:triggerProcessedList) - 1
+      let l:indent = matchend(l:line, '^.\{-}\ze\(\S\|$\)')
+      call append(l:currLineNum, map(l:triggerProcessedList[1:],
+            \ "'".strpart(l:line, 0, indent)."'.v:val"))
+      call setline(l:currLineNum + l:numOfInsertedLines,
+            \ getline(l:currLineNum + l:numOfInsertedLines) . l:afterTrigger)
+    endif
     return ''
   else
     return "\<Tab>"
