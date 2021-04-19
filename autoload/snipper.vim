@@ -26,14 +26,14 @@
 "************************************************************************
 
 " Self-explanatory.
-let g:vim_snipper#commentLinePattern = '\m^#'
-let g:vim_snipper#emptyLinePattern = '\m^$'
+let g:snipper#commentLinePattern = '\m^#'
+let g:snipper#emptyLinePattern = '\m^$'
 
 " Matches lines like 'snippet trigger "doc string"', with the doc string
 " optional.
-let g:vim_snipper#snippetDeclarationLinePattern = '\m^snippet \zs\S\+\ze\(\s\|$\)'
+let g:snipper#snippetDeclarationLinePattern = '\m^snippet \zs\S\+\ze\(\s\|$\)'
 
-let g:vim_snipper#snippetLinePattern = '\m^\t\zs.*\ze'
+let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze'
 
 let s:snippets = {}
 
@@ -59,13 +59,13 @@ function snipper#ParseSnippetFile(snipFile)
   let l:snippetLinesList = []
 
   for line in readfile(a:snipFile)
-    if line =~ g:vim_snipper#emptyLinePattern
+    if line =~ g:snipper#emptyLinePattern
       throw "EmptyLineOnSnippetFile"
-    elseif line =~ g:vim_snipper#commentLinePattern
+    elseif line =~ g:snipper#commentLinePattern
       continue " Skip comments.
     endif
 
-    let l:aux = matchstr(line, g:vim_snipper#snippetDeclarationLinePattern)
+    let l:aux = matchstr(line, g:snipper#snippetDeclarationLinePattern)
     if l:aux != ""
       " We found a "snippet trigger" line. So first, check to see if we have
       " found that trigger before. If so, throw up error, has multiple snips
@@ -97,12 +97,12 @@ function snipper#ParseSnippetFile(snipFile)
       " We didn't find a line like "^snippet trigger ...", so look for other
       " possibilities...
 
-      let l:aux = matchstr(line, g:vim_snipper#snippetLinePattern)
-      if l:aux != ""
+      let l:aux = matchstrpos(line, g:snipper#snippetLinePattern)
+      if ! (l:aux[1] == -1 && l:aux[2] == -1)
         " We found a line that starts with a <Tab>; i.e., it is part of the
         " expansion of a snippet. So add it to the list of expansion lines,
         " and continue onto to the next line.
-        call add(l:snippetLinesList, l:aux)
+        call add(l:snippetLinesList, l:aux[0])
         continue
       else
         " We found a line that is not a comment, is not a "snippet trigger"
