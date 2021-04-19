@@ -37,7 +37,7 @@ let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze'
 
 let s:snippets = {}
 
-let s:snippets_dir = fnameescape(expand("~/.vim/snippets"))
+let s:snippets_dir = fnameescape(expand(b:snipper_config.snippet_location))
 
 function snipper#BuildSnippetDict()
   " If .snippet files have been parsed before, then do not parse them again.
@@ -55,6 +55,9 @@ function snipper#BuildSnippetDict()
 endfunction
 
 function snipper#ParseSnippetFile(snipFile)
+  if g:snipper_debug | echomsg "Entering snipper#ParseSnippetFile()" | endif
+  if g:snipper_debug | echomsg "Argument 1: " . a:snipFile | endif
+
   let l:currentSnippetKey = ""
   let l:snippetLinesList = []
 

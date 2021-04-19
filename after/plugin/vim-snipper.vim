@@ -25,10 +25,37 @@
 "
 "************************************************************************
 
-if exists('s:vim_snipper_loaded')
+" Let the user have the last word.
+if exists('g:snipper_config') && has_key(g:snipper_config, 'disable')
+  if g:snipper_config.disable
+    redraw
+    echomsg("vim-snipper: Disabled by user.")
+    finish
+  endif
+endif
+
+if exists('b:vim_snipper_loaded')
 	finish
 endif
-let s:vim_snipper_loaded = 1
+let b:vim_snipper_loaded = 1
+
+" Defaults.
+let b:snipper_config = {
+      \    'debug'            : 0,
+      \    'disable'          : 0,
+      \    'snippet_location' : '~/.vim/snippets/',
+      \}
+
+" Override values with user preferences.
+if exists('g:snipper_config')
+  call extend(b:snipper_config, g:snipper_config)
+endif
+
+if b:snipper_config.debug == 0
+  let g:snipper_debug = v:false
+else
+  let g:snipper_debug = v:true
+endif
 
 " Set the filetype for .snippets files. Set also the foldmethod to indent.
 au BufRead,BufNewFile *.snippets\= set ft=snippet
