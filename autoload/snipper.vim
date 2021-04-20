@@ -188,21 +188,21 @@ function snipper#TriggerSnippet()
     " the cursor is non-alphanumeric, then there is no snippet to expand. So
     " just return an actual <Tab> character.
     return "\<Tab>"
-  else
-    " Otherwise, before the cursor there is a potential trigger. So I go find
-    " out its bounds (array indexes). Basically, start at the char immediately
-    " before the cursor, and keep going back until a non-alphanumeric char is
-    " found.
-    let l:triggerEndCharIdx = l:col - 2
-    let l:prevCharIdx = l:triggerEndCharIdx
-
-    while l:prevCharIdx >= 1 && l:line[l:prevCharIdx - 1] =~ '\m\w'
-      let l:prevCharIdx -= 1
-    endwhile
-
-    " Now, after the above while loop, l:prevCharIdx contain the array idx of
-    " the first character of the trigger word.
   endif
+
+  " Otherwise, before the cursor there is a potential trigger. So I go find
+  " out its bounds (array indexes). Basically, start at the char immediately
+  " before the cursor, and keep going back until a non-alphanumeric char is
+  " found.
+  let l:triggerEndCharIdx = l:col - 2
+  let l:prevCharIdx = l:triggerEndCharIdx
+
+  while l:prevCharIdx >= 1 && l:line[l:prevCharIdx - 1] =~ '\m\w'
+    let l:prevCharIdx -= 1
+  endwhile
+
+  " Now, after the above while loop, l:prevCharIdx contain the array idx of
+  " the first character of the trigger word.
 
   let l:triggerLength = l:triggerEndCharIdx - l:prevCharIdx + 1
   let l:trigger = strpart(l:line, l:prevCharIdx, l:triggerLength) " trigger must be ascii only
