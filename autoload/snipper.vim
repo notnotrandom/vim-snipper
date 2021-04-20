@@ -144,14 +144,36 @@ function snipper#ProcessSnippet(snip)
 		let snippet = substitute(snippet, '\\`', '`', 'g')
 	endif
 
-  let snippet = substitute(snippet, '\([^\\]\)${\d\{1}\(:[^}]\+\)\?}', '\1', "g")
-  let snippet = substitute(snippet, '\([^\\]\)$\d\{1}', '\1', "g")
+  " let snippet = substitute(snippet, '\([^\\]\)${1\(:\([^}]\+\)\)\?}', '\1\3', "g")
+  let snippet = substitute(snippet, '\([^\\]\)$1', '\1', "g")
+
+  " let snippet = substitute(snippet, '\([^\\]\)${2\(:[^}]\+\)\?}', '\1', "g")
+  let snippet = substitute(snippet, '\([^\\]\)$2', '\1', "g")
 
 	if &expandtab " Expand tabs to spaces if 'expandtab' is set.
 		return substitute(snippet, '\t',
           \ repeat(' ', &softtabstop ? &softtabstop : &shiftwidth), 'g')
 	endif
 	return snippet
+endfunction
+
+function snipper#ProcessNthTabStop(snippet, num)
+  let [ l:placeHolder, l:startIdx, l:endIdx ] =
+        \ matchstrpos(a:snippet, '[^\\]${'.a:num.'\(:\zs[^}]\+\ze\)\?}')
+
+  if l:placeHolder == "" && l:startIdx == -1 && l:endIdx == -1
+    return []
+  endif
+
+  " XXX This slicing assumes a:num has just one digit!
+  if l:placeHolder[-1:] != '}'
+    " 5 is the len of "${1:" plus 1
+    let l:snippet = a:snippet[ : l:startIdx - 5]  . l:placeHolder . a:snippet[l:endIdx + 1 : ]
+    return [ l:snippet, l:startIdx - 4, strcharlen(l:placeHolder) ]
+  else
+    let l:snippet = a:snippet[ : l:startIdx ] . a:snippet[l:endIdx : ]
+    return [ l:snippet, l:startIdx, 0 ]
+  endif
 endfunction
 
 function snipper#TriggerSnippet()
@@ -218,22 +240,32 @@ function snipper#TriggerSnippet()
   endif
 
   " The variable l:afterTrigger contains that part of the line that comes
-  " after the trigger text, if any. The reason we need an if condition is to
-  " avoid an "array index out of bounds" error...
-  if l:triggerEndCharIdx < strcharlen(l:line)
-    let l:afterTrigger = l:line[l:triggerEndCharIdx + 1 : ]
-  else
-    let l:afterTrigger = ''
-  endif
+  " after the trigger text, if any. We do not to check that
+  " l:triggerEndCharIdx + 1 is within the bounds of the array, because if it
+  " isn't, empty is returned -- which is what we want.
+  let l:afterTrigger = l:line[l:triggerEndCharIdx + 1 : ]
 
   if has_key(s:snippets, l:trigger) == v:true
     let l:triggerExpansion = snipper#ProcessSnippet(join(s:snippets[l:trigger], "\n"))
     let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
-    call setline(".", l:beforeTrigger . l:triggerProcessedList[0] . l:afterTrigger)
     if len(l:triggerProcessedList) == 1
-      call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
+      let l:res = snipper#ProcessNthTabStop(l:triggerProcessedList[0], 1)
+      if l:res == []
+        call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
+        call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
+        return ""
+      endif
+      let [ l:snip, l:idxForCursor, l:placeHolderLength ] = l:res
+      call setline(".", l:beforeTrigger . l:snip . l:afterTrigger)
+      call setcharpos('.', [0, line("."), l:charCol - l:triggerLength + l:idxForCursor + 1])
+      if l:placeHolderLength == 0
+        return ""
+      else
+        return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
+      endif
     else
+      call setline(".", l:beforeTrigger . l:triggerProcessedList[0] . l:afterTrigger)
       let l:numOfInsertedLines = len(l:triggerProcessedList) - 1
       let l:indent = matchend(l:line, '^.\{-}\ze\(\S\|$\)')
       call append(l:currLineNum, map(l:triggerProcessedList[1:],
