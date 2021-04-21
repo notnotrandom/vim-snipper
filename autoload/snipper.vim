@@ -39,6 +39,12 @@ let s:snippets = {}
 
 let s:snippets_dir = fnameescape(expand(b:snipper_config.snippet_location))
 
+" Variable for processing tabstops.
+let s:partialSnipLen      = 0
+let s:snippetInsertionPos = -1
+let s:cursorStartPos      = -1
+let s:nextTabStopNum      = 0
+
 function snipper#BuildSnippetDict()
   " If .snippet files have been parsed before, then do not parse them again.
   if len(s:snippets) != 0
@@ -158,6 +164,7 @@ function snipper#ProcessSnippet(snip)
 endfunction
 
 function snipper#ProcessNthTabStop(snippet, num)
+  echom "|".a:snippet."|"
   let [ l:placeHolder, l:startIdx, l:endIdx ] =
         \ matchstrpos(a:snippet, '[^\\]${'.a:num.'\(:\zs[^}]\+\ze\)\?}')
 
@@ -172,6 +179,7 @@ function snipper#ProcessNthTabStop(snippet, num)
     return [ l:snippet, l:startIdx - 4, strcharlen(l:placeHolder) ]
   else
     let l:snippet = a:snippet[ : l:startIdx ] . a:snippet[l:endIdx : ]
+    echom "|".l:snippet."|"
     return [ l:snippet, l:startIdx, 0 ]
   endif
 endfunction
@@ -189,6 +197,43 @@ function snipper#TriggerSnippet()
     catch /^InvalidLineFound$/
       echoerr "Invalid snippet line found!"
     endtry
+  endif
+
+  if s:nextTabStopNum != 0
+    let l:line = getline(".") " Current line.
+    let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
+    let l:snippetPartialEndPos =
+          \ (s:snippetInsertionPos - 1) + s:partialSnipLen + (l:charCol - s:cursorStartPos + 1)
+    let l:partiallyProcessedSnippet =
+          \ slice(l:line, s:snippetInsertionPos - 1, l:snippetPartialEndPos - 1)
+    let l:res = snipper#ProcessNthTabStop(l:partiallyProcessedSnippet, s:nextTabStopNum)
+    if l:res == []
+      " There is no ${s:nextTabStopNum} tabstop, so we are done.
+      let s:partialSnipLen      = 0
+      let s:snippetInsertionPos = -1
+      let s:cursorStartPos      = -1
+      let s:nextTabStopNum      = 0
+      return ""
+    else
+      let [ l:snip, l:idxForCursor, l:placeHolderLength ] = l:res
+      " echom l:snip
+      " echom "|".l:line[ s:snippetInsertionPos + (l:idxForCursor + l:placeHolderLength + 4) + 1 : ]."|"
+      " echom "|".l:snip."|"
+      if l:placeHolderLength == 0
+        call setline(".", l:line[ : s:snippetInsertionPos - 1] . l:snip .
+              \ l:line[ s:snippetInsertionPos + (l:idxForCursor + l:placeHolderLength + 4) + 1 : ])
+      else
+        call setline(".", l:line[ : s:snippetInsertionPos - 1] . l:snip .
+              \ l:line[ s:snippetInsertionPos + (l:idxForCursor + l:placeHolderLength + 5) + 1 : ])
+      endif
+      call setcharpos('.', [0, line("."), s:snippetInsertionPos + l:idxForCursor + 1])
+
+      if l:placeHolderLength == 0
+        return ""
+      else " l:placeHolderLength >= 1
+        return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
+      endif
+    endif
   endif
 
 	let l:line = getline(".") " Current line.
@@ -252,16 +297,26 @@ function snipper#TriggerSnippet()
     if len(l:triggerProcessedList) == 1
       let l:res = snipper#ProcessNthTabStop(l:triggerProcessedList[0], 1)
       if l:res == []
+        " There is no ${1} tabstop, so we are done.
         call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
         call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
         return ""
       endif
+
+      " Otherwise we process ${1}, and set s:nextTabStopNum to 2, which is the
+      " next tabstop to be processed.
       let [ l:snip, l:idxForCursor, l:placeHolderLength ] = l:res
       call setline(".", l:beforeTrigger . l:snip . l:afterTrigger)
       call setcharpos('.', [0, line("."), l:charCol - l:triggerLength + l:idxForCursor + 1])
+
+      let s:partialSnipLen = strcharlen(l:snip)
+      let s:cursorStartPos = l:charCol - l:triggerLength + l:idxForCursor + 1
+      let s:snippetInsertionPos = l:charCol - l:triggerLength
+      let s:nextTabStopNum      = 2
+
       if l:placeHolderLength == 0
         return ""
-      else
+      else " l:placeHolderLength >= 1
         return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
       endif
     else
