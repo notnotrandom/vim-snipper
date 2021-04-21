@@ -164,7 +164,7 @@ function snipper#ProcessSnippet(snip)
 endfunction
 
 function snipper#ProcessNthTabStop(snippet, num)
-  echom "|".a:snippet."|"
+  " echom "|".a:snippet."|"
   let [ l:placeHolder, l:startIdx, l:endIdx ] =
         \ matchstrpos(a:snippet, '[^\\]${'.a:num.'\(:\zs[^}]\+\ze\)\?}')
 
@@ -179,7 +179,7 @@ function snipper#ProcessNthTabStop(snippet, num)
     return [ l:snippet, l:startIdx - 4, strcharlen(l:placeHolder) ]
   else
     let l:snippet = a:snippet[ : l:startIdx ] . a:snippet[l:endIdx : ]
-    echom "|".l:snippet."|"
+    " echom "|".l:snippet."|"
     return [ l:snippet, l:startIdx, 0 ]
   endif
 endfunction
@@ -203,9 +203,15 @@ function snipper#TriggerSnippet()
     let l:line = getline(".") " Current line.
     let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
     let l:snippetPartialEndPos =
-          \ (s:snippetInsertionPos - 1) + s:partialSnipLen + (l:charCol - s:cursorStartPos + 1)
+          \ s:snippetInsertionPos + s:partialSnipLen - 1 + (l:charCol - s:cursorStartPos)
     let l:partiallyProcessedSnippet =
           \ slice(l:line, s:snippetInsertionPos - 1, l:snippetPartialEndPos - 1)
+    echom "partial snip len |".s:partialSnipLen."|"
+    echom "snip insert pos |".s:snippetInsertionPos."|"
+    echom "charcol |".l:charCol."|"
+    echom "cursor start pos |".s:cursorStartPos."|"
+    echom "partial end pos|".l:snippetPartialEndPos."|"
+    echom "|".l:partiallyProcessedSnippet."|"
     let l:res = snipper#ProcessNthTabStop(l:partiallyProcessedSnippet, s:nextTabStopNum)
     if l:res == []
       " There is no ${s:nextTabStopNum} tabstop, so we are done.
@@ -309,8 +315,8 @@ function snipper#TriggerSnippet()
       call setline(".", l:beforeTrigger . l:snip . l:afterTrigger)
       call setcharpos('.', [0, line("."), l:charCol - l:triggerLength + l:idxForCursor + 1])
 
-      let s:partialSnipLen = strcharlen(l:snip)
-      let s:cursorStartPos = l:charCol - l:triggerLength + l:idxForCursor + 1
+      let s:partialSnipLen = strcharlen(l:snip) - l:placeHolderLength
+      let s:cursorStartPos = l:charCol - l:triggerLength + l:idxForCursor
       let s:snippetInsertionPos = l:charCol - l:triggerLength
       let s:nextTabStopNum      = 2
 
