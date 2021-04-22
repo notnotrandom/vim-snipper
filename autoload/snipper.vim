@@ -60,6 +60,23 @@ function snipper#BuildSnippetDict()
   endif
 endfunction
 
+function snipper#ClearState()
+  echom "mode: " . mode()
+  let s:partialSnipLen      = 0
+  let s:snippetInsertionPos = -1
+  let s:cursorStartPos      = -1
+  let s:nextTabStopNum      = 0
+
+  iunmap <buffer><expr> <Esc>
+  sunmap <buffer><expr> <Esc>
+
+  if mode() == 's'
+    return "\<Esc>"
+  else
+    return "\<Esc>"
+  endif
+endfunction
+
 function snipper#ParseSnippetFile(snipFile)
   if g:snipper_debug | echomsg "Entering snipper#ParseSnippetFile()" | endif
   if g:snipper_debug | echomsg "Argument 1: " . a:snipFile | endif
@@ -199,6 +216,13 @@ function snipper#ProcessNthTabStop(snippet, num)
   endif
 endfunction
 
+function snipper#SetTraps()
+  inoremap <buffer><expr> <Esc> snipper#ClearState()
+  inoremap <buffer><expr> <C-c> snipper#ClearState()
+  snoremap <buffer><expr> <Esc> snipper#ClearState()
+  snoremap <buffer><expr> <C-c> snipper#ClearState()
+endfunction
+
 function snipper#TriggerSnippet()
   if len(s:snippets) == 0
     try
@@ -230,12 +254,10 @@ function snipper#TriggerSnippet()
     " echom "|".l:partiallyProcessedSnippet."|"
     let l:res = snipper#ProcessNthTabStop(l:partiallyProcessedSnippet, s:nextTabStopNum)
     if l:res == []
-      " There is no ${s:nextTabStopNum} tabstop, so we are done.
-      let s:partialSnipLen      = 0
-      let s:snippetInsertionPos = -1
-      let s:cursorStartPos      = -1
-      let s:nextTabStopNum      = 0
-      return ""
+      " There is no ${s:nextTabStopNum} tabstop, so just return <Tab> (the
+      " user did press the <Tab> key).
+      call snipper#ClearState()
+      return "\<Tab>"
     else
       let [ l:snip, l:idxForCursor, l:placeHolderLength ] = l:res
       " echom l:snip
@@ -243,6 +265,12 @@ function snipper#TriggerSnippet()
       " echom "idx cursor |".l:idxForCursor."|"
       " echom "snip |".l:snip."|"
       " echom "line prev to snip |".l:line[ : s:snippetInsertionPos - 2]."|"
+
+      " Prepare to process ${3}, if it exists. XXX
+      let s:nextTabStopNum = 3
+
+      call snipper#SetTraps()
+
       if l:placeHolderLength == 0
         call setline(".", strcharpart(l:line, 0, s:snippetInsertionPos - 1) . l:snip .
               \ strcharpart(l:line, s:snippetInsertionPos + l:idxForCursor - 1 + 4))
@@ -337,6 +365,8 @@ function snipper#TriggerSnippet()
       " echom "snip insert pos |".s:snippetInsertionPos."|"
       " echom "snip idx for cur |".l:idxForCursor."|"
       " echom "cursor start pos |".s:cursorStartPos."|"
+
+      call snipper#SetTraps()
 
       if l:placeHolderLength == 0
         call setcharpos('.', [0, line("."), s:cursorStartPos])
