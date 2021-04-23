@@ -321,8 +321,9 @@ function snipper#TriggerSnippet()
   " Now, after the above while loop, l:prevCharIdx contain the array idx of
   " the first character of the trigger word.
 
+  " NOTA BENE: trigger must be ASCII only!
   let l:triggerLength = l:triggerEndCharIdx - l:prevCharIdx + 1
-  let l:trigger = strpart(l:line, l:prevCharIdx, l:triggerLength) " trigger must be ascii only
+  let l:trigger = strpart(l:line, l:prevCharIdx, l:triggerLength)
 
   " The variable l:beforeTrigger contains that part of the line that comes
   " before the trigger text, if any. The reason we need an if condition is
@@ -355,9 +356,19 @@ function snipper#TriggerSnippet()
 
       " Otherwise we process ${1}, and set s:nextTabStopNum to 2, which is the
       " next tabstop to be processed.
+
+      " l:res contains the expanded snippet, stripped of ${1:arg}, which was
+      " replaced with arg, if any. l:idxForCursor contains the array index
+      " (0-based) of the position of the '$' in ${1:arg}, in the expanded
+      " snippet. l:placeHolderLength is the (char) length of "arg".
       let [ l:snip, l:idxForCursor, l:placeHolderLength ] = l:res
+
+      " As the expansion is a one-liner, the text that goes before it is the
+      " text that came before the trigger. Likewise for the text that goes
+      " after it.
       call setline(".", l:beforeTrigger . l:snip . l:afterTrigger)
 
+      " Save state information needed for processing ${2:arg}, if any.
       let s:nextTabStopNum = 2
       let s:partialSnipLen = strcharlen(l:snip) - l:placeHolderLength
       let s:snippetInsertionPos = l:charCol - l:triggerLength
@@ -366,6 +377,8 @@ function snipper#TriggerSnippet()
       " echom "snip idx for cur |".l:idxForCursor."|"
       " echom "cursor start pos |".s:cursorStartPos."|"
 
+      " Set the mappings to catch <Esc>, or <Ctrl-c>, and do the necessary
+      " cleanup actions (e.g., clean the state variables, etc.).
       call snipper#SetTraps()
 
       if l:placeHolderLength == 0
@@ -379,9 +392,26 @@ function snipper#TriggerSnippet()
         call setcharpos('.', [0, line("."), s:cursorStartPos + 1])
         " call setcharpos('.', [0, line("."), l:charCol - l:triggerLength + l:idxForCursor + 1])
 
-        return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
+        " If the placeholder is just one char, then just "hit" v and go to
+        " select mode. Otherwise, as the cursor will be left at the first char
+        " of the placeholder, to visually select it, "hit" l,
+        " l:placeHolderLength - 1 times.
+        " (Doing v0^G would cause for the visual selection to go to the start
+        " of the line...)
+        if l:placeHolderLength == 1
+          return "\<Esc>v"
+        else " l:placeHolderLength > 1
+          return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
+        endif
       endif
     else
+      " If the expansion has more than one line, for the time being, we just
+      " strip it of any tabstops, and place it verbatim in the file. This is
+      " done respecting the existing indentation level.
+      let l:triggerExpansion = substitute(l:triggerExpansion,
+            \ '\([^\\]\)${\d\(:\([^}]\+\)\)\?}', '\1', "g")
+      let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
+
       call setline(".", l:beforeTrigger . l:triggerProcessedList[0] . l:afterTrigger)
       let l:numOfInsertedLines = len(l:triggerProcessedList) - 1
       let l:indent = matchend(l:line, '^.\{-}\ze\(\S\|$\)')
@@ -391,7 +421,7 @@ function snipper#TriggerSnippet()
             \ getline(l:currLineNum + l:numOfInsertedLines) . l:afterTrigger)
     endif
     return ''
-  else
+  else " If there is no snippet to expand, then just return the Tab key.
     return "\<Tab>"
   endif
 endfunction
