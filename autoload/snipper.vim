@@ -369,10 +369,42 @@ function snipper#TriggerSnippet()
       call setline(".", l:beforeTrigger . l:snip . l:afterTrigger)
 
       " Save state information needed for processing ${2:arg}, if any.
-      let s:nextTabStopNum = 2
+      let s:nextTabStopNum = 2 " Number of next tabstop.
+
+      " Length of the (partially processed) snippet that was inserted by
+      " setline() above. The length of the current placeholder text is
+      " substracted, to allow, in the next iteration (i.e. after the user
+      " having typed the text he wanted, and pressed Tab again), for the total
+      " length of the snipped, plus the user inserted text, to be calculated.
+      " This is done using the initial cursor position (basically, the
+      " cursor's position when the user start to type); cf. s:cursorStartPos
+      " below.
       let s:partialSnipLen = strcharlen(l:snip) - l:placeHolderLength
+
+      " The column (char-based) of the cursor at the point the snippet was
+      " inserted (e.g., if the snippet was inserted at the start of the line,
+      " then s:snippetInsertionPos = 1).
+      "   To see why it is computed in this way, imagine a line containing the
+      " string "abc ", and cursor is after the ' ', in insert mode, when the
+      " user types the trigger "xpto", and hits Tab. So the snippet insert
+      " position will be after the "abc " string, and this is column position
+      " 5. Now, after typing "xpto", the cursor will be at column 9 -- so this
+      " will be the value of l:charCol. And the trigger length is 4. Hence,
+      " the snippet insert position will be 9 - 4 = 5, as expected.
+      "   NOTA BENE: l:charCol is computed with the function charcol(), and
+      " the trigger must be ASCII only, so this works even if the previous
+      " text -- "abc " in the example above -- contains non-ASCII characters.
       let s:snippetInsertionPos = l:charCol - l:triggerLength
+
+      " The column (char-based) at which the cursor is placed after the
+      " processing of the ${1:arg} tabstop. I.e., the column of the dollar
+      " sign.
+      "   As explained above, s:snippetInsertionPos contains the column at
+      " which the snippet text starts. Now
       let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
+      " End of saving state information needed for processing the next
+      " tabstop.
+
       " echom "snip insert pos |".s:snippetInsertionPos."|"
       " echom "snip idx for cur |".l:idxForCursor."|"
       " echom "cursor start pos |".s:cursorStartPos."|"
