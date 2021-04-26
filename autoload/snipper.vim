@@ -216,9 +216,11 @@ function snipper#ProcessSnippet(snip)
     call add(s:tabStops, [ l:startCharIdxForCurrTabStop,
                          \ l:placeHolderLength, [] ] )
 
+    " Update previous tabstops that are to the right of the current one.
+    " Because replacing ${d:foo} with foo, or ${d} with nothing, will change
+    " the cursor position.
     for idx in range(l:tabStopNum - 1)
       if s:tabStops[idx][0] > l:startCharIdxForCurrTabStop
-        call add(s:tabStops[l:tabStopNum - 1][2], idx) " Keep the INDEX, not tabstopnum, of tabstops in front of the current one.
         if l:placeHolderLength == 0
           let s:tabStops[idx][0] -= 4
         else
@@ -233,6 +235,19 @@ function snipper#ProcessSnippet(snip)
       throw "TooManyTabStops"
     endif
   endwhile
+
+  " For all tabstops, add the ones that are to the right of the current one
+  " (in the same line).
+  for idx in range(len(s:tabStops))
+    let l:startCharIdxForCurrTabStop = s:tabStops[idx][0]
+    echom "idx !".idx."! ".l:startCharIdxForCurrTabStop
+    for jdx in range(len(s:tabStops))
+      if s:tabStops[jdx][0] > l:startCharIdxForCurrTabStop
+        echom "foo !".jdx
+        call add(s:tabStops[idx][2], jdx) " Keep the INDEX, not tabstopnum, of tabstops in front of the current one.
+      endif
+    endfor
+  endfor
 
   if &expandtab " Expand tabs to spaces if 'expandtab' is set.
     return substitute(l:snippet, '\t',
@@ -286,26 +301,34 @@ function snipper#TriggerSnippet()
 
       " let l:res = snipper#ProcessNthTabStop(l:partiallyProcessedSnippet, s:nextTabStopNum)
 
+      " Still need the values for *previous* tabstop.
       let [ l:idxForCursor, l:placeHolderLength, l:idxsToUpdate ] =
-            \ s:tabStops[s:nextTabStopNum - 1]
+            \ s:tabStops[s:nextTabStopNum - 2]
+
       " XXX deal with l:idxsToUpdate
+      for idx in l:idxsToUpdate
+        echom "idx blab !".idx."!"
+        let s:tabStops[idx][0] += (l:lengthOfUserText - l:placeHolderLength)
+      endfor
       " echom l:snip
       " echom "|".l:line[ s:snippetInsertionPos + (l:idxForCursor + l:placeHolderLength + 4) + 1 : ]."|"
       " echom "idx cursor |".l:idxForCursor."|"
       " echom "snip |".l:snip."|"
       " echom "line prev to snip |".l:line[ : s:snippetInsertionPos - 2]."|"
 
-
       call snipper#SetTraps()
+
+      " Now need the cursor index for the current tabstop.
+      let [ l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
+            \ s:tabStops[s:nextTabStopNum - 1]
 
       echom "snip insert pos |".s:snippetInsertionPos."|"
       echom "idx cursor |".l:idxForCursor."|"
       echom "lengthOfUserText |".l:lengthOfUserText."|"
       echom "prev placeholder len |".s:tabStops[s:nextTabStopNum - 2][1]."|"
       echom s:tabStops[s:nextTabStopNum - 2]
-      call setcharpos('.', [0, line("."),
-                          \ s:snippetInsertionPos + l:idxForCursor + l:lengthOfUserText +
-                          \ - s:tabStops[s:nextTabStopNum - 2][1]])
+
+      call setcharpos('.', [0, line("."), s:snippetInsertionPos + l:idxForCursor ])
 
       " Prepare to process ${3}, if it exists. XXX
       let s:nextTabStopNum = 3
