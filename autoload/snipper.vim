@@ -40,6 +40,7 @@ let s:snippets = {}
 let s:snippets_dir = fnameescape(expand(b:snipper_config.snippet_location))
 
 " Variable for processing tabstops.
+let s:tabStops = []
 let s:partialSnipLen      = 0
 let s:snippetInsertionPos = -1
 let s:cursorStartPos      = -1
@@ -62,6 +63,7 @@ endfunction
 
 function snipper#ClearState()
   echom "mode: " . mode()
+  let s:tabStops = []
   let s:partialSnipLen      = 0
   let s:snippetInsertionPos = -1
   let s:cursorStartPos      = -1
@@ -153,67 +155,90 @@ endfunction
 
 " Taken from M. Sanders' snipMate, and modified.
 function snipper#ProcessSnippet(snip)
-	let snippet = a:snip
-	" Evaluate eval (`...`) expressions.
-	" Backquotes prefixed with a backslash "\" are ignored.
-	" Using a loop here instead of a regex fixes a bug with nested "\=".
-	if stridx(snippet, '`') != -1
-		while match(snippet, '\(^\|[^\\]\)`.\{-}[^\\]`') != -1
-			let snippet = substitute(snippet, '\(^\|[^\\]\)\zs`.\{-}[^\\]`\ze',
-		                \ substitute(eval(matchstr(snippet, '\(^\|[^\\]\)`\zs.\{-}[^\\]\ze`')),
-		                \ "\n\\%$", '', ''), '')
-		endw
-		let snippet = substitute(snippet, "\r", "\n", 'g')
-		let snippet = substitute(snippet, '\\`', '`', 'g')
-	endif
-
-  " let snippet = substitute(snippet, '\([^\\]\)${1\(:\([^}]\+\)\)\?}', '\1\3', "g")
-  let snippet = substitute(snippet, '\([^\\]\)$1', '\1', "g")
-
-  " let snippet = substitute(snippet, '\([^\\]\)${2\(:[^}]\+\)\?}', '\1', "g")
-  let snippet = substitute(snippet, '\([^\\]\)$2', '\1', "g")
-
-	if &expandtab " Expand tabs to spaces if 'expandtab' is set.
-		return substitute(snippet, '\t',
-          \ repeat(' ', &softtabstop ? &softtabstop : &shiftwidth), 'g')
-	endif
-	return snippet
-endfunction
-
-function snipper#ProcessNthTabStop(snippet, num)
-  echom "processNth recv snip |".a:snippet."|"
-  let [ l:placeHolder, l:startIdx, l:endIdx ] =
-        \ matchstrpos(a:snippet, '[^\\]${'.a:num.'\(:\zs[^}]\+\ze\)\?}')
-
-  if l:placeHolder == "" && l:startIdx == -1 && l:endIdx == -1
-    return []
+  if s:tabStops != []
+    " When this function is called, any previous processing of any snippets
+    " should either have been completed, or be properly cleared.
+    throw "InternalStateNotProperlyCleared"
   endif
 
-  let l:startCharIdx = charidx(a:snippet, l:startIdx)
-  let l:endCharIdx = charidx(a:snippet, l:endIdx)
+  let l:snippet = a:snip
+  " Evaluate eval (`...`) expressions.
+  " Backquotes prefixed with a backslash "\" are ignored.
+  " Using a loop here instead of a regex fixes a bug with nested "\=".
+  if stridx(l:snippet, '`') != -1
+    while match(l:snippet, '\(^\|[^\\]\)`.\{-}[^\\]`') != -1
+      let snippet = substitute(l:snippet, '\(^\|[^\\]\)\zs`.\{-}[^\\]`\ze',
+                    \ substitute(eval(matchstr(l:snippet, '\(^\|[^\\]\)`\zs.\{-}[^\\]\ze`')),
+                    \ "\n\\%$", '', ''), '')
+    endwhile
+    let l:snippet = substitute(l:snippet, "\r", "\n", 'g')
+    let l:snippet = substitute(l:snippet, '\\`', '`', 'g')
+  endif
 
-  " XXX This slicing assumes a:num has just one digit!
-  if l:placeHolder[-1:] != '}'
-    echom "processNth with placeholder startIdx |".(l:startCharIdx -4)."|"
-    " 5 is the len of "${1:" plus 1
-    " let l:snippet = a:snippet[ : l:startIdx - 5]  . l:placeHolder . a:snippet[l:endIdx + 1 : ]
-    let l:snippet = strcharpart(a:snippet, 0, l:startCharIdx - 5 + 1 ) . l:placeHolder .
-          \ strcharpart(a:snippet, l:endCharIdx + 1 )
+  let l:tabStopNum = 1
+  while 1
+    let [ l:placeHolder, l:startIdx, l:endIdx ] =
+          \ matchstrpos(l:snippet, '[^\\]${'.l:tabStopNum.'\(:\zs[^}]\+\ze\)\?}')
 
-    return [ l:snippet, l:startIdx - 4, strcharlen(l:placeHolder) ]
-  else " No placeholder.
-    " let l:snippet = a:snippet[ : l:startIdx ] . a:snippet[l:endIdx : ]
-    if l:endCharIdx != -1
-      let l:snippet = strcharpart(a:snippet, 0, l:startCharIdx + 1 ) .
-            \ strcharpart(a:snippet, l:endCharIdx )
-    else
-      let l:snippet = strcharpart(a:snippet, 0, l:startCharIdx + 1 )
+    if l:placeHolder == "" && l:startIdx == -1 && l:endIdx == -1
+      break
     endif
-    echom "processNth no placeholder snip to return |".l:snippet."|"
-    echom "processNth no placeholder endIdx |".l:endIdx."|"
-    echom "processNth no placeholder charidx endIdx |".charidx(a:snippet,l:endIdx)."|"
-    return [ l:snippet, l:startCharIdx + 1, 0 ]
+
+    let l:startCharIdx = charidx(l:snippet, l:startIdx)
+    let l:endCharIdx = charidx(l:snippet, l:endIdx)
+
+    let l:startCharIdxForCurrTabStop = 0
+    let l:placeHolderLength = 0
+    if l:placeHolder[-1:] != '}'
+      " echom "processSnippet with placeholder startIdx |".(l:startCharIdx -4)."|"
+      " 5 is the len of "${1:" plus 1
+      " let l:snippet = l:snippet[ : l:startIdx - 5]  . l:placeHolder . l:snippet[l:endIdx + 1 : ]
+      " XXX This slicing assumes a:num has just one digit!
+      let l:snippet = strcharpart(l:snippet, 0, l:startCharIdx - 5 + 1 ) . l:placeHolder .
+                    \ strcharpart(l:snippet, l:endCharIdx + 1 )
+
+      let l:startCharIdxForCurrTabStop = l:startCharIdx - 4
+      let l:placeHolderLength = strcharlen(l:placeHolder)
+    else " No placeholder.
+      " let l:snippet = l:snippet[ : l:startIdx ] . l:snippet[l:endIdx : ]
+      if l:endCharIdx != -1
+        let l:snippet = strcharpart(l:snippet, 0, l:startCharIdx + 1 ) .
+                      \ strcharpart(l:snippet, l:endCharIdx )
+      else
+        let l:snippet = strcharpart(l:snippet, 0, l:startCharIdx + 1 )
+      endif
+      " echom "processSnippet no placeholder snip to return |".l:snippet."|"
+      " echom "processSnippet no placeholder endIdx |".l:endIdx."|"
+      " echom "processSnippet no placeholder charidx endIdx |".charidx(l:snippet,l:endIdx)."|"
+      let l:startCharIdxForCurrTabStop = l:startCharIdx + 1
+    endif
+
+    call add(s:tabStops, [ l:startCharIdxForCurrTabStop,
+                         \ l:placeHolderLength, [] ] )
+
+    for idx in range(l:tabStopNum - 1)
+      if s:tabStops[idx][0] > l:startCharIdxForCurrTabStop
+        call add(s:tabStops[l:tabStopNum - 1][2], idx) " Keep the INDEX, not tabstopnum, of tabstops in front of the current one.
+        if l:placeHolderLength == 0
+          let s:tabStops[idx][0] -= 4
+        else
+          let s:tabStops[idx][0] += (l:placeHolderLength - 5)
+        endif
+      endif
+    endfor
+
+    let l:tabStopNum += 1
+    if l:tabStopNum == 10
+      " XXX throw exception, for no more than 9 tabstops (1--9) are allowed.
+      throw "TooManyTabStops"
+    endif
+  endwhile
+
+  if &expandtab " Expand tabs to spaces if 'expandtab' is set.
+    return substitute(l:snippet, '\t',
+          \ repeat(' ', &softtabstop ? &softtabstop : &shiftwidth), 'g')
   endif
+  return l:snippet
 endfunction
 
 function snipper#SetTraps()
@@ -239,54 +264,61 @@ function snipper#TriggerSnippet()
   endif
 
   if s:nextTabStopNum != 0
-    let l:line = getline(".") " Current line.
-    let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
-    let l:snippetPartialEndPos =
-          \ s:snippetInsertionPos + s:partialSnipLen - 1 +
-          \ strcharlen(slice(l:line, s:cursorStartPos, l:charCol))
-    let l:partiallyProcessedSnippet =
-          \ slice(l:line, s:snippetInsertionPos - 1, l:snippetPartialEndPos)
-    " echom "partial snip len |".s:partialSnipLen."|"
-    " echom "snip insert pos |".s:snippetInsertionPos."|"
-    " echom "charcol |".l:charCol."|"
-    " echom "cursor start pos |".s:cursorStartPos."|"
-    " echom "partial end pos|".l:snippetPartialEndPos."|"
-    " echom "|".l:partiallyProcessedSnippet."|"
-    let l:res = snipper#ProcessNthTabStop(l:partiallyProcessedSnippet, s:nextTabStopNum)
-    if l:res == []
-      " There is no ${s:nextTabStopNum} tabstop, so just return <Tab> (the
-      " user did press the <Tab> key).
+    " len(s:tabStops) is the number (1-based) of the last tabstop.
+    if s:nextTabStopNum > len(s:tabStops)
+      " There is no ${s:nextTabStopNum} tabstop, so just return <Tab>
+      " (after all, the user did press the <Tab> key).
       call snipper#ClearState()
       return "\<Tab>"
     else
-      let [ l:snip, l:idxForCursor, l:placeHolderLength ] = l:res
+      let l:line = getline(".") " Current line.
+      let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
+      let l:lengthOfUserText = strcharlen(slice(l:line, s:cursorStartPos, l:charCol))
+      let l:snippetEndPos =  s:snippetInsertionPos + s:partialSnipLen - 1 +
+                           \ l:lengthOfUserText
+      let l:snippet =  slice(l:line, s:snippetInsertionPos - 1, l:snippetEndPos)
+      " echom "partial snip len |".s:partialSnipLen."|"
+      " echom "snip insert pos |".s:snippetInsertionPos."|"
+      echom "charcol |".l:charCol."|"
+      echom "cursor start pos |".s:cursorStartPos."|"
+      " echom "partial end pos|".l:snippetPartialEndPos."|"
+      " echom "|".l:snippet."|"
+
+      " let l:res = snipper#ProcessNthTabStop(l:partiallyProcessedSnippet, s:nextTabStopNum)
+
+      let [ l:idxForCursor, l:placeHolderLength, l:idxsToUpdate ] =
+            \ s:tabStops[s:nextTabStopNum - 1]
+      " XXX deal with l:idxsToUpdate
       " echom l:snip
       " echom "|".l:line[ s:snippetInsertionPos + (l:idxForCursor + l:placeHolderLength + 4) + 1 : ]."|"
       " echom "idx cursor |".l:idxForCursor."|"
       " echom "snip |".l:snip."|"
       " echom "line prev to snip |".l:line[ : s:snippetInsertionPos - 2]."|"
 
-      " Prepare to process ${3}, if it exists. XXX
-      let s:nextTabStopNum = 3
 
       call snipper#SetTraps()
 
+      echom "snip insert pos |".s:snippetInsertionPos."|"
+      echom "idx cursor |".l:idxForCursor."|"
+      echom "lengthOfUserText |".l:lengthOfUserText."|"
+      echom "prev placeholder len |".s:tabStops[s:nextTabStopNum - 2][1]."|"
+      echom s:tabStops[s:nextTabStopNum - 2]
+      call setcharpos('.', [0, line("."),
+                          \ s:snippetInsertionPos + l:idxForCursor + l:lengthOfUserText +
+                          \ - s:tabStops[s:nextTabStopNum - 2][1]])
+
+      " Prepare to process ${3}, if it exists. XXX
+      let s:nextTabStopNum = 3
+
       if l:placeHolderLength == 0
-        call setline(".", strcharpart(l:line, 0, s:snippetInsertionPos - 1) . l:snip .
-              \ strcharpart(l:line, s:snippetInsertionPos + l:idxForCursor - 1 + 4))
-        call setcharpos('.', [0, line("."), s:snippetInsertionPos + l:idxForCursor ])
         return ""
       else " l:placeHolderLength >= 1
-        call setline(".", strcharpart(l:line, 0, s:snippetInsertionPos - 1) . l:snip .
-              \ strcharpart(l:line, s:snippetInsertionPos + l:idxForCursor - 1
-              \ + 3 + l:placeHolderLength + 2))
-        call setcharpos('.', [0, line("."), s:snippetInsertionPos + l:idxForCursor ])
         return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
       endif
     endif
   endif
 
-	let l:line = getline(".") " Current line.
+  let l:line = getline(".") " Current line.
   let l:currLineNum = line(".")
   " let l:indent = indent(l:currLineNum)
 
@@ -346,11 +378,11 @@ function snipper#TriggerSnippet()
     let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
     if len(l:triggerProcessedList) == 1
-      let l:res = snipper#ProcessNthTabStop(l:triggerProcessedList[0], 1)
-      if l:res == []
-        " There is no ${1} tabstop, so we are done.
+      " let l:res = snipper#ProcessNthTabStop(l:triggerProcessedList[0], 1)
+      if len(s:tabStops) == 0
         call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
         call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
+        " There is no ${1} tabstop, so we are done.
         return ""
       endif
 
@@ -361,7 +393,9 @@ function snipper#TriggerSnippet()
       " replaced with arg, if any. l:idxForCursor contains the array index
       " (0-based) of the position of the '$' in ${1:arg}, in the expanded
       " snippet. l:placeHolderLength is the (char) length of "arg".
-      let [ l:snip, l:idxForCursor, l:placeHolderLength ] = l:res
+      let l:snip = l:triggerExpansion
+
+      let [ l:idxForCursor, l:placeHolderLength ; l:subsequent ] = s:tabStops[0] " index one less than trigger number!
 
       " As the expansion is a one-liner, the text that goes before it is the
       " text that came before the trigger. Likewise for the text that goes
@@ -373,11 +407,11 @@ function snipper#TriggerSnippet()
 
       " Length of the (partially processed) snippet that was inserted by
       " setline() above. The length of the current placeholder text is
-      " substracted, to allow, in the next iteration (i.e. after the user
+      " subtracted, to allow, in the next iteration (i.e. after the user
       " having typed the text he wanted, and pressed Tab again), for the total
-      " length of the snipped, plus the user inserted text, to be calculated.
+      " length of the snippet, plus the user inserted text, to be calculated.
       " This is done using the initial cursor position (basically, the
-      " cursor's position when the user start to type); cf. s:cursorStartPos
+      " cursor's position when the user started to type); cf. s:cursorStartPos
       " below.
       let s:partialSnipLen = strcharlen(l:snip) - l:placeHolderLength
 
@@ -413,13 +447,13 @@ function snipper#TriggerSnippet()
       " cleanup actions (e.g., clean the state variables, etc.).
       call snipper#SetTraps()
 
+      echom "placeHolderLength |".l:placeHolderLength."|"
       if l:placeHolderLength == 0
         call setcharpos('.', [0, line("."), s:cursorStartPos])
         return ""
       else " l:placeHolderLength >= 1
         " If there is a placeholder, then the cursor is placed *after the
         " first char* of that placeholder, for <Esc>v to function properly.
-        " let s:cursorStartPos = s:cursorStartPos + 1
 
         call setcharpos('.', [0, line("."), s:cursorStartPos + 1])
         " call setcharpos('.', [0, line("."), l:charCol - l:triggerLength + l:idxForCursor + 1])
