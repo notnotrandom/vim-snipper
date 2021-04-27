@@ -39,12 +39,20 @@ let s:snippets = {}
 
 let s:snippets_dir = fnameescape(expand(b:snipper_config.snippet_location))
 
-" Variable for processing tabstops.
+" Variables for processing tabstops.
+
+" Each element with index i will correspond to tabstop i+1. Each element will
+" be a list with three elements:
+" - The char based index (so 0-based) of the position where the cursor must be
+"   placed (position 0 is the start of the snippet). This is the position of
+"   the $ character.
 let s:tabStops = []
+
 let s:partialSnipLen      = 0
 let s:snippetInsertionPos = -1
 let s:cursorStartPos      = -1
 let s:nextTabStopNum      = 0
+" End of variables for processing tabstops.
 
 function snipper#BuildSnippetDict()
   " If .snippet files have been parsed before, then do not parse them again.
@@ -182,44 +190,125 @@ function snipper#ProcessSnippet(snip)
     let l:snippet = substitute(l:snippet, '\\`', '`', 'g')
   endif
 
+  " Iterate over all tabstops in snippet. XXX
   let l:tabStopNum = 1
   while 1
-    let [ l:placeHolder, l:startIdx, l:endIdx ] =
-          \ matchstrpos(l:snippet, '[^\\]${'.l:tabStopNum.'\(:\zs[^}]\+\ze\)\?}')
 
+    " Find tabstop number l:tabStopNum. For the first one, the regexp matches
+    " either ${1}, or ${1:placeholder}. For the former case, ${1}:
+    " - the start byte index returned is that of the character before $, if
+    "   there is one, or the byte index of $, if it is at the beginning of the
+    "   snippet.
+    " - the end byte index, is one plus the byte index of }.
+    "
+    " For the latter, ${1:placeholder}:
+    " - the start byte index returned is that of the first character of the
+    "   placeholder, in this example, it would be the index of p.
+    " - the end byte index, is one plus the byte index of the last character
+    "   of the placeholder text (in this example, one plus the byte index of
+    "   r).
+    let [ l:placeHolder, l:startIdx, l:endIdx ] =
+          \ matchstrpos(l:snippet, '\([^\\]\)\?${'.l:tabStopNum.'\(:\zs[^}]\+\ze\)\?}')
+
+    " If there was no match, break. This happens when we already went over all
+    " tabstops in the snippet, but there might still positional information
+    " that has to be stored in s:tabStops.
     if l:placeHolder == "" && l:startIdx == -1 && l:endIdx == -1
       break
     endif
 
+    " The matchstrpos() function used above returns *byte* indexes; the
+    " charidx() function converts them to char indexes. This ensures that the
+    " code functions properly, even with non-ASCII characters, either in the
+    " snippet's expansion, or in the text where it gets inserted.
     let l:startCharIdx = charidx(l:snippet, l:startIdx)
     let l:endCharIdx = charidx(l:snippet, l:endIdx)
 
+    " As their names let slip, these variables will contain the char idx for
+    " the current tabstop, and the length of its placeholder, if there one
+    " (otherwise it is left at 0).
     let l:startCharIdxForCurrTabStop = 0
     let l:placeHolderLength = 0
-    if l:placeHolder[-1:] != '}'
-      " echom "processSnippet with placeholder startIdx |".(l:startCharIdx -4)."|"
-      " 5 is the len of "${1:" plus 1
-      " let l:snippet = l:snippet[ : l:startIdx - 5]  . l:placeHolder . l:snippet[l:endIdx + 1 : ]
-      " XXX This slicing assumes a:num has just one digit!
-      let l:snippet = strcharpart(l:snippet, 0, l:startCharIdx - 5 + 1 ) . l:placeHolder .
-                    \ strcharpart(l:snippet, l:endCharIdx + 1 )
 
+    " If there is no placeholder -- i.e. we are dealing with tabstops like
+    " ${1} -- then the last character of l:placeholder returned by the
+    " matchstrpos() function above will be '}'. Otherwise, it will be some
+    " other char.
+    if l:placeHolder[-1:] != '}' " There is a placeholder.
+
+      " Here we take the snippet and replace ${1:placeholder} with
+      " "placeholder", sans quotes (replace with any other digit for other
+      " tabstops). As there is a placeholder, variable l:startCharIdx contain
+      " the char index of the first letter of the placeholder, in this case p.
+      " This is the index of p in the entire snippet string. So first we want
+      " to grab the substring that starts at 0, and goes up to and including
+      " index l:startCharIdx - 5 (). The length of a string is one plus the
+      " (0-based) index of the last element (e.g. for a string of length 3, if
+      " the first element has index 0, then the last has index 2 -- and the
+      " length 2 + 1 = 3). So the substring going from 0 to l:startCharIdx - 5
+      " has length l:startCharIdx - 4 -- and it is this value that goes as the
+      " second argument of the first strcharpart(). But this is also the value
+      " of the char index of $ -- if we start at p, and go back 4 chars, we
+      " are left on $ -- and so the relevant variable,
+      " l:startCharIdxForCurrTabStop, is used as the strcharpart() second
+      " argument.
+      "   For the substring following the placeholder, recall that in this
+      " example l:endCharIdx is one plus the char index of r, i.e., the index
+      " of }. Hence we want the substring that starts at l:endCharIdx + 1, and
+      " goes to the end of the snippet.
       let l:startCharIdxForCurrTabStop = l:startCharIdx - 4
+      let l:snippet = strcharpart(l:snippet, 0, l:startCharIdxForCurrTabStop)
+            \ . l:placeHolder . strcharpart(l:snippet, l:endCharIdx + 1 )
+
       let l:placeHolderLength = strcharlen(l:placeHolder)
-    else " No placeholder.
-      " let l:snippet = l:snippet[ : l:startIdx ] . l:snippet[l:endIdx : ]
+
+    else " There is no placeholder.
+
+      " In the matchstrpos() used above, when there is no placeholder, that
+      " start index will be either that of $, if it is the first char of the
+      " snippet, or that of the character before $, if it is not the first
+      " character of the snippet. In this latter case, we bump l:startCharIdx
+      " by one, to make it the char index of $.
+      "   The strgetchar() function returns a *character code* (!), using the
+      " current encoding. The function nr2char() converts it back to a
+      " character, using utf-8 by default. As the $ character is a part of
+      " ASCII, encondings do not cause problems.
+      if nr2char(strgetchar(l:placeHolder, 0)) != '$'
+        let l:startCharIdx += 1
+      endif
+
+      " Here we take the snippet and replace ${1} with an empty string, as
+      " there is no placeholder (replace with any other digit for other
+      " tabstops).
+      "   So first, we want to grab the substring that goes from 0, up to and
+      " including the char immediately before $. l:startCharIdx will point to
+      " the char index of $, in the snippet string. So update
+      " l:startCharIdxForCurrTabStop accordingly. But as char indexes start at
+      " 0, l:startCharIdx is also the char length of the string going from 0
+      " up to and including the char immediately to the left of $. So we use
+      " that as the length argument of strcharpart(). (Also, if $ happens to
+      " be the first char of the snippet string, then l:startCharIdx will be 0
+      " -- but this is also the length of the string to be prepended.)
+      "   Lastly, we want to append the substring going from the char
+      " immediately to the right of }, up to the end of the string. Here there
+      " is a caveat: l:endIdx is one plus the byte index of }. But if } is the
+      " last char of the snippet string, this means that charidx() will return
+      " -1 -- i.e., l:endCharIdx is -1. If that is the case, then there is
+      "  nothing to append (else-clause below). Otherwise (if-clause), we use
+      "  strcharpart(), starting from l:endCharIdx, and without giving it a
+      "  length -- which means it will slurp all the remaining chars in the
+      "  snippet string.
+      let l:startCharIdxForCurrTabStop = l:startCharIdx
       if l:endCharIdx != -1
-        let l:snippet = strcharpart(l:snippet, 0, l:startCharIdx + 1 ) .
+        let l:snippet = strcharpart(l:snippet, 0, l:startCharIdxForCurrTabStop) .
                       \ strcharpart(l:snippet, l:endCharIdx )
       else
-        let l:snippet = strcharpart(l:snippet, 0, l:startCharIdx + 1 )
+        let l:snippet = strcharpart(l:snippet, 0, l:startCharIdxForCurrTabStop)
       endif
-      " echom "processSnippet no placeholder snip to return |".l:snippet."|"
-      " echom "processSnippet no placeholder endIdx |".l:endIdx."|"
-      " echom "processSnippet no placeholder charidx endIdx |".charidx(l:snippet,l:endIdx)."|"
-      let l:startCharIdxForCurrTabStop = l:startCharIdx + 1
+      " End replacing ${1} with empty string.
     endif
 
+    " See the comments for s:tabStops, at the start of the file.
     call add(s:tabStops, [ l:startCharIdxForCurrTabStop,
                          \ l:placeHolderLength, [] ] )
 
@@ -238,7 +327,7 @@ function snipper#ProcessSnippet(snip)
 
     let l:tabStopNum += 1
     if l:tabStopNum == 10
-      " XXX throw exception, for no more than 9 tabstops (1--9) are allowed.
+      " XXX add debug print
       throw "TooManyTabStops"
     endif
   endwhile
