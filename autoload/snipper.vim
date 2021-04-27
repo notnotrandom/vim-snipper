@@ -162,16 +162,23 @@ function snipper#ProcessSnippet(snip)
   endif
 
   let l:snippet = a:snip
-  " Evaluate eval (`...`) expressions.
-  " Backquotes prefixed with a backslash "\" are ignored.
-  " Using a loop here instead of a regex fixes a bug with nested "\=".
+  " Evaluate eval (`...`) expressions. Backquotes prefixed with a backslash
+  " "\" are ignored. Using a loop here instead of a regex fixes a bug with
+  " nested "\=".
   if stridx(l:snippet, '`') != -1
     while match(l:snippet, '\(^\|[^\\]\)`.\{-}[^\\]`') != -1
       let snippet = substitute(l:snippet, '\(^\|[^\\]\)\zs`.\{-}[^\\]`\ze',
-                    \ substitute(eval(matchstr(l:snippet, '\(^\|[^\\]\)`\zs.\{-}[^\\]\ze`')),
-                    \ "\n\\%$", '', ''), '')
+                             \ substitute(eval(matchstr(
+                                               \ l:snippet, '\(^\|[^\\]\)`\zs.\{-}[^\\]\ze`')),
+                                        \ "\n\\%$", '', ''), '')
     endwhile
+
+    " Fix newlines.
     let l:snippet = substitute(l:snippet, "\r", "\n", 'g')
+
+    " The above while loop dealt with embedded eval expressions. Now replace
+    " escaped backticks with "plain" backticks -- as they will no longer be
+    " processed, there is no need to have them escaped.
     let l:snippet = substitute(l:snippet, '\\`', '`', 'g')
   endif
 
@@ -289,44 +296,28 @@ function snipper#TriggerSnippet()
       let l:line = getline(".") " Current line.
       let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
       let l:lengthOfUserText = strcharlen(slice(l:line, s:cursorStartPos, l:charCol))
-      let l:snippetEndPos =  s:snippetInsertionPos + s:partialSnipLen - 1 +
-                           \ l:lengthOfUserText
-      let l:snippet =  slice(l:line, s:snippetInsertionPos - 1, l:snippetEndPos)
-      " echom "partial snip len |".s:partialSnipLen."|"
-      " echom "snip insert pos |".s:snippetInsertionPos."|"
-      echom "charcol |".l:charCol."|"
-      echom "cursor start pos |".s:cursorStartPos."|"
-      " echom "partial end pos|".l:snippetPartialEndPos."|"
-      " echom "|".l:snippet."|"
-
-      " let l:res = snipper#ProcessNthTabStop(l:partiallyProcessedSnippet, s:nextTabStopNum)
 
       " Still need the values for *previous* tabstop.
       let [ l:idxForCursor, l:placeHolderLength, l:idxsToUpdate ] =
             \ s:tabStops[s:nextTabStopNum - 2]
 
-      " XXX deal with l:idxsToUpdate
+      let l:snippetEndPos =  s:snippetInsertionPos + s:partialSnipLen +
+            \ l:placeHolderLength - 1 + l:lengthOfUserText
+
+      let l:snippet =  slice(l:line, s:snippetInsertionPos - 1, l:snippetEndPos)
+      " echom "partial end pos|".l:snippetPartialEndPos."|"
+      " echom "|".l:snippet."|"
+
       for idx in l:idxsToUpdate
         echom "idx blab !".idx."!"
         let s:tabStops[idx][0] += (l:lengthOfUserText - l:placeHolderLength)
       endfor
-      " echom l:snip
-      " echom "|".l:line[ s:snippetInsertionPos + (l:idxForCursor + l:placeHolderLength + 4) + 1 : ]."|"
-      " echom "idx cursor |".l:idxForCursor."|"
-      " echom "snip |".l:snip."|"
-      " echom "line prev to snip |".l:line[ : s:snippetInsertionPos - 2]."|"
 
       call snipper#SetTraps()
 
       " Now need the cursor index for the current tabstop.
       let [ l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
             \ s:tabStops[s:nextTabStopNum - 1]
-
-      echom "snip insert pos |".s:snippetInsertionPos."|"
-      echom "idx cursor |".l:idxForCursor."|"
-      echom "lengthOfUserText |".l:lengthOfUserText."|"
-      echom "prev placeholder len |".s:tabStops[s:nextTabStopNum - 2][1]."|"
-      echom s:tabStops[s:nextTabStopNum - 2]
 
       call setcharpos('.', [0, line("."), s:snippetInsertionPos + l:idxForCursor ])
 
@@ -429,27 +420,21 @@ function snipper#TriggerSnippet()
       let s:nextTabStopNum = 2 " Number of next tabstop.
 
       " Length of the (partially processed) snippet that was inserted by
-      " setline() above. The length of the current placeholder text is
-      " subtracted, to allow, in the next iteration (i.e. after the user
-      " having typed the text he wanted, and pressed Tab again), for the total
-      " length of the snippet, plus the user inserted text, to be calculated.
-      " This is done using the initial cursor position (basically, the
-      " cursor's position when the user started to type); cf. s:cursorStartPos
-      " below.
-      let s:partialSnipLen = strcharlen(l:snip) - l:placeHolderLength
+      " setline() above. Includes the length of the placeholder text.
+      let s:partialSnipLen = strcharlen(l:snip)
 
       " The column (char-based) of the cursor at the point the snippet was
       " inserted (e.g., if the snippet was inserted at the start of the line,
       " then s:snippetInsertionPos = 1).
       "   To see why it is computed in this way, imagine a line containing the
-      " string "abc ", and cursor is after the ' ', in insert mode, when the
+      " string "abc ", with the cursor after the ' ', in insert mode, when the
       " user types the trigger "xpto", and hits Tab. So the snippet insert
       " position will be after the "abc " string, and this is column position
       " 5. Now, after typing "xpto", the cursor will be at column 9 -- so this
       " will be the value of l:charCol. And the trigger length is 4. Hence,
       " the snippet insert position will be 9 - 4 = 5, as expected.
       "   NOTA BENE: l:charCol is computed with the function charcol(), and
-      " the trigger must be ASCII only, so this works even if the previous
+      " the trigger has to be ASCII only, so this works even if the previous
       " text -- "abc " in the example above -- contains non-ASCII characters.
       let s:snippetInsertionPos = l:charCol - l:triggerLength
 
@@ -457,21 +442,28 @@ function snipper#TriggerSnippet()
       " processing of the ${1:arg} tabstop. I.e., the column of the dollar
       " sign.
       "   As explained above, s:snippetInsertionPos contains the column at
-      " which the snippet text starts. Now
+      " which the snippet text starts. Now l:idxForCursor contains the
+      " char-based, 0-based, index of the $ sign. For example, suppose you
+      " have a snippet like so (sans quotes): "\label{${1:arg}}". Then, for
+      " the first tabstop, l:idxForCursor will be 7. If this snippet is to be
+      " inserted in the first column, then s:cursorStartPos is 8. If on the
+      " second column, it is 9, and so on. Hence the cursor start position
+      " equals the snippet insert position, plus l:idxForCursor.
+      "   NOTA BENE: cursor positions, and string lengths are computed using
+      " functions that count characters, not bytes (composite characters,
+      " e.g. ã, or €, count as only character). Hence, this works even with
+      " snippets containing non-ASCII characters.
       let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
       " End of saving state information needed for processing the next
       " tabstop.
-
-      " echom "snip insert pos |".s:snippetInsertionPos."|"
-      " echom "snip idx for cur |".l:idxForCursor."|"
-      " echom "cursor start pos |".s:cursorStartPos."|"
 
       " Set the mappings to catch <Esc>, or <Ctrl-c>, and do the necessary
       " cleanup actions (e.g., clean the state variables, etc.).
       call snipper#SetTraps()
 
-      echom "placeHolderLength |".l:placeHolderLength."|"
       if l:placeHolderLength == 0
+        " If there is no placeholder, then just place the cursor at the start
+        " position determined above, and be done with it.
         call setcharpos('.', [0, line("."), s:cursorStartPos])
         return ""
       else " l:placeHolderLength >= 1
@@ -479,14 +471,13 @@ function snipper#TriggerSnippet()
         " first char* of that placeholder, for <Esc>v to function properly.
 
         call setcharpos('.', [0, line("."), s:cursorStartPos + 1])
-        " call setcharpos('.', [0, line("."), l:charCol - l:triggerLength + l:idxForCursor + 1])
 
         " If the placeholder is just one char, then just "hit" v and go to
         " select mode. Otherwise, as the cursor will be left at the first char
-        " of the placeholder, to visually select it, "hit" l,
-        " l:placeHolderLength - 1 times.
-        " (Doing v0^G would cause for the visual selection to go to the start
-        " of the line...)
+        " of the placeholder; to visually select it, "hit" l,
+        " (l:placeHolderLength - 1) times.
+        "   (Doing v0^G would cause for the visual selection to go to the
+        " start of the line...)
         if l:placeHolderLength == 1
           return "\<Esc>v"
         else " l:placeHolderLength > 1
