@@ -45,7 +45,16 @@ let s:snippets_dir = fnameescape(expand(b:snipper_config.snippet_location))
 " be a list with three elements:
 " - The char based index (so 0-based) of the position where the cursor must be
 "   placed (position 0 is the start of the snippet). This is the position of
-"   the $ character.
+"   the $ character (of the i+1 tabstop).
+" - The char length of the placeholder for tabstop i+1. It is 0 if there is no
+"   placeholder.
+" - A list of the INDEXES that are to the right of the current tabstop. This
+"   is needed because after changing the current tabstop, the positions
+"   relative to those tabstops further down the line very likely need to be
+"   modified.
+"     For example, consider a snippet like: "\emph{${1}}${2}". The list of
+"   indexes for the first element (i.e. s:tabStops[0]) will be [1] (the 1
+"   corresponds to tabstop 1+1 = 2, and indeed, ${2} is to the right of ${1}).
 let s:tabStops = []
 
 let s:partialSnipLen      = 0
@@ -161,7 +170,7 @@ function snipper#ParseSnippetFile(snipFile)
   endif
 endfunction
 
-" Taken from M. Sanders' snipMate, and modified.
+" Taken from M. Sanders' snipMate, and (heavily!) modified.
 function snipper#ProcessSnippet(snip)
   if s:tabStops != []
     " When this function is called, any previous processing of any snippets
@@ -190,7 +199,10 @@ function snipper#ProcessSnippet(snip)
     let l:snippet = substitute(l:snippet, '\\`', '`', 'g')
   endif
 
-  " Iterate over all tabstops in snippet. XXX
+  " Iterate over all tabstops in snippet. Replace each of them with either the
+  " respective placeholder (if there is one), or with an empty string (if
+  " there ain't). Also record relevant information about each tabstop in
+  " s:tabStops.
   let l:tabStopNum = 1
   while 1
 
@@ -318,8 +330,12 @@ function snipper#ProcessSnippet(snip)
     for idx in range(l:tabStopNum - 1)
       if s:tabStops[idx][0] > l:startCharIdxForCurrTabStop
         if l:placeHolderLength == 0
+          " Replacing ${d} with an empty string removes 4 characters.
           let s:tabStops[idx][0] -= 4
         else
+          " Replacing ${d:foo} with foo remove 5 characters, and adds
+          " len(foo) = 3 characters. The length of the placeholder is in var
+          " l:placeHolderLength.
           let s:tabStops[idx][0] += (l:placeHolderLength - 5)
         endif
       endif
@@ -327,13 +343,14 @@ function snipper#ProcessSnippet(snip)
 
     let l:tabStopNum += 1
     if l:tabStopNum == 10
-      " XXX add debug print
+      if g:snipper_debug | echomsg "Only 9 tabstops allowed: ${1} to ${9}." | endif
       throw "TooManyTabStops"
     endif
   endwhile
 
-  " For all tabstops, add the ones that are to the right of the current one
-  " (in the same line).
+  " For all tabstops, add to s:tabStops the ones that are to the right of the
+  " current one (in the same line). See comments of s:tabStops to see why this
+  " is done.
   for idx in range(len(s:tabStops))
     let l:startCharIdxForCurrTabStop = s:tabStops[idx][0]
     echom "idx !".idx."! ".l:startCharIdxForCurrTabStop
@@ -352,6 +369,10 @@ function snipper#ProcessSnippet(snip)
   return l:snippet
 endfunction
 
+" Brief: Allow the processing of a snippet expansion to be interrupted, by
+" hitting either <Esc>, or <Ctrl-c>. This function captures that event, and
+" call snipper#ClearState(), to remove state information. This clears the way
+" for a new snippet expansion to be processed.
 function snipper#SetTraps()
   inoremap <buffer><expr> <Esc> snipper#ClearState()
   inoremap <buffer><expr> <C-c> snipper#ClearState()
@@ -375,18 +396,28 @@ function snipper#TriggerSnippet()
   endif
 
   if s:nextTabStopNum != 0
-    " len(s:tabStops) is the number (1-based) of the last tabstop.
+    " If s:nextTabStopNum is not its default value (0), that means that at
+    " least one tabstop has been processed, so now we must see if there exists
+    " another one waiting to be processed.
+    "   [len(s:tabStops) is the number (1-based) of the last tabstop in the
+    " current snippet.]
     if s:nextTabStopNum > len(s:tabStops)
-      " There is no ${s:nextTabStopNum} tabstop, so just return <Tab>
-      " (after all, the user did press the <Tab> key).
+      " There is no ${s:nextTabStopNum} tabstop, so just (clear the state and)
+      " return <Tab> (the user did press the <Tab> key, after all).
       call snipper#ClearState()
       return "\<Tab>"
     else
+      " There is a ${s:nextTabStopNum} tabstop, so go process it. Start by
+      " obtaining the current line, and current cursor position. From both of
+      " those, compute the char length of the text the user entered, at the
+      " *previous* tabstop.
       let l:line = getline(".") " Current line.
       let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
       let l:lengthOfUserText = strcharlen(slice(l:line, s:cursorStartPos, l:charCol))
 
-      " Still need the values for *previous* tabstop.
+      " Obtain the record for that previous tabstop. (Recall that the current
+      " tabstop has index s:nextTabStopNum - 1, so the previous one is
+      " s:nextTabStopNum - 2).
       let [ l:idxForCursor, l:placeHolderLength, l:idxsToUpdate ] =
             \ s:tabStops[s:nextTabStopNum - 2]
 
@@ -394,11 +425,8 @@ function snipper#TriggerSnippet()
             \ l:placeHolderLength - 1 + l:lengthOfUserText
 
       let l:snippet =  slice(l:line, s:snippetInsertionPos - 1, l:snippetEndPos)
-      " echom "partial end pos|".l:snippetPartialEndPos."|"
-      " echom "|".l:snippet."|"
 
       for idx in l:idxsToUpdate
-        echom "idx blab !".idx."!"
         let s:tabStops[idx][0] += (l:lengthOfUserText - l:placeHolderLength)
       endfor
 
