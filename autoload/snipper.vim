@@ -96,6 +96,22 @@ function snipper#ClearState()
   endif
 endfunction
 
+function snipper#FigureOutWhatToReturn(placeholder_length)
+  " If the placeholder is empty, just return an empty string. If it is just
+  " one char, then just "hit" v and go to select mode. Otherwise, as the
+  " cursor will be left at the first char of the placeholder; to visually
+  " select it, "hit" l, (a:placeholder_length - 1) times.
+  "   (Doing v0^G would cause for the visual selection to go to the
+  " start of the line...)
+  if a:placeholder_length == 0
+    return ""
+  elseif a:placeholder_length == 1
+    return "\<Esc>v"
+  else " a:placeholder_length > 1
+    return "\<Esc>v" . (a:placeholder_length - 1) . "l"
+  endif
+endfunction
+
 function snipper#ParseSnippetFile(snipFile)
   if g:snipper_debug | echomsg "Entering snipper#ParseSnippetFile()" | endif
   if g:snipper_debug | echomsg "Argument 1: " . a:snipFile | endif
@@ -395,10 +411,10 @@ function snipper#TriggerSnippet()
     endtry
   endif
 
-  if s:nextTabStopNum != 0
+  while s:nextTabStopNum != 0
     " If s:nextTabStopNum is not its default value (0), that means that at
-    " least one tabstop has been processed, so now we must see if there exists
-    " another one waiting to be processed.
+    " least ${1} or ${1:arg} exists, so now we must see if there exists
+    " another tabstop, for the following digit.
     "   [len(s:tabStops) is the number (1-based) of the last tabstop in the
     " current snippet.]
     if s:nextTabStopNum > len(s:tabStops)
@@ -407,47 +423,76 @@ function snipper#TriggerSnippet()
       call snipper#ClearState()
       return "\<Tab>"
     else
-      " There is a ${s:nextTabStopNum} tabstop, so go process it. Start by
-      " obtaining the current line, and current cursor position. From both of
-      " those, compute the char length of the text the user entered, at the
-      " *previous* tabstop.
+      " There is a ${s:nextTabStopNum} tabstop, so go process it. Control
+      " arrives here because at ${s:nextTabStopNum - 1}, the user typed the
+      " text he wanted, and then hit <Tab>. And that brought him to the
+      " current tabstop, viz. {s:nextTabStopNum}.
+      "   Start by obtaining the current line, and current cursor position.
+      " From both of those, compute the char length of the text the user
+      " entered, at the *previous* tabstop (${s:nextTabStopNum - 1}).
+      "
       let l:line = getline(".") " Current line.
       let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
       let l:lengthOfUserText = strcharlen(slice(l:line, s:cursorStartPos, l:charCol))
 
-      " Obtain the record for that previous tabstop. (Recall that the current
-      " tabstop has index s:nextTabStopNum - 1, so the previous one is
-      " s:nextTabStopNum - 2).
+      " (cont.) Obtain the record for that previous tabstop. (Recall that the
+      " current tabstop has index s:nextTabStopNum - 1, so the index of the
+      " previous one is s:nextTabStopNum - 2).
       let [ l:idxForCursor, l:placeHolderLength, l:idxsToUpdate ] =
             \ s:tabStops[s:nextTabStopNum - 2]
 
-      let l:snippetEndPos =  s:snippetInsertionPos + s:partialSnipLen +
-            \ l:placeHolderLength - 1 + l:lengthOfUserText
+      " (cont.) From that previous information, compute the column of the last
+      " character of the snippet, i.e., the snippet's end position. To see why
+      " we need to subtract 1, imagine that the snippet is at the start of the
+      " line, i.e., that s:snippetInsertionPos = 1 (variables with "Pos" in
+      " their name refer to column positions). If s:partialSnipLen is, say, 3,
+      " that means that the last char of the snippet is at column 3. But 1 + 3
+      " = 4, so we need to subtract 1.
+      let l:snippetEndPos = s:snippetInsertionPos + s:partialSnipLen - 1 +
+            \ l:placeHolderLength + l:lengthOfUserText
 
+      " So now we have the start and ending positions of the snippet, so we
+      " can extract it from the current line. Recall that "Pos" variables
+      " refer to column positions, but slice works with char indexes. So we
+      " have to use s:snippetInsertionPos - 1 for start of the slice. For its
+      " ending, the slice() function actually excludes the ending index (much
+      " like Python), so we need one plus the ending index l:snippetEndPos -
+      " 1, i.e., l:snippetEndPos.
       let l:snippet =  slice(l:line, s:snippetInsertionPos - 1, l:snippetEndPos)
 
+      " Keep in mind that we are still working with the *previous* tabstop,
+      " ${s:nextTabStopNum - 1} (which has index s:nextTabStopNum - 2 in
+      " s:tabStops). Thus, l:idxsToUpdate contains the *indexes* (not tabstop
+      " numbers) of all tabstops that are (in the same line) to the right of
+      " ${s:nextTabStopNum - 1}. For those, we need to keep the cursor char
+      " index accurate, we need to add to it the difference between the length
+      " of the user inserted text, and the length of the placeholder.
       for idx in l:idxsToUpdate
         let s:tabStops[idx][0] += (l:lengthOfUserText - l:placeHolderLength)
       endfor
 
+      " At this point, processing ${s:nextTabStopNum - 1} is done. So we set
+      " the traps for the processing of ${s:nextTabStopNum}.
       call snipper#SetTraps()
 
-      " Now need the cursor index for the current tabstop.
+      " (cont.) And retrieve the information about ${s:nextTabStopNum} (which
+      " has index s:nextTabStopNum - 1).
       let [ l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
             \ s:tabStops[s:nextTabStopNum - 1]
 
       call setcharpos('.', [0, line("."), s:snippetInsertionPos + l:idxForCursor ])
 
-      " Prepare to process ${3}, if it exists. XXX
-      let s:nextTabStopNum = 3
+      " NOTA BENE: it should not be necessary here to check that
+      " s:nextTabStopNum only goes up to 9, because function
+      " snipper#ProcessSnippet() already checks for this.
 
-      if l:placeHolderLength == 0
-        return ""
-      else " l:placeHolderLength >= 1
-        return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
-      endif
+      let s:nextTabStopNum += 1
+      let s:partialSnipLen = strcharlen(l:snippet)
+      let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
+
+      return snipper#FigureOutWhatToReturn(l:placeHolderLength)
     endif
-  endif
+  endwhile
 
   let l:line = getline(".") " Current line.
   let l:currLineNum = line(".")
@@ -582,24 +627,19 @@ function snipper#TriggerSnippet()
         " If there is no placeholder, then just place the cursor at the start
         " position determined above, and be done with it.
         call setcharpos('.', [0, line("."), s:cursorStartPos])
-        return ""
+        return snipper#FigureOutWhatToReturn(l:placeHolderLength)
       else " l:placeHolderLength >= 1
+
         " If there is a placeholder, then the cursor is placed *after the
-        " first char* of that placeholder, for <Esc>v to function properly.
-
+        " first char* of that placeholder.
         call setcharpos('.', [0, line("."), s:cursorStartPos + 1])
+        " (cont.) The reason for that, is that the function
+        " snipper#FigureOutWhatToReturn() will do an <Esc>v, which makes the
+        " cursor go back one char. So for the cursor to be at s:cursorStartPos
+        " after that <Esc>v, it needs to be placed at s:cursorStartPos + 1
+        " before that <Esc>v.
+        return snipper#FigureOutWhatToReturn(l:placeHolderLength)
 
-        " If the placeholder is just one char, then just "hit" v and go to
-        " select mode. Otherwise, as the cursor will be left at the first char
-        " of the placeholder; to visually select it, "hit" l,
-        " (l:placeHolderLength - 1) times.
-        "   (Doing v0^G would cause for the visual selection to go to the
-        " start of the line...)
-        if l:placeHolderLength == 1
-          return "\<Esc>v"
-        else " l:placeHolderLength > 1
-          return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
-        endif
       endif
     else
       " If the expansion has more than one line, for the time being, we just
