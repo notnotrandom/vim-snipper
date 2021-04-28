@@ -385,6 +385,26 @@ function snipper#ProcessSnippet(snip)
   return l:snippet
 endfunction
 
+" NOTA BENE: this functions requires the value of s:cursorStartPos for the
+" current snippet!!!
+function snipper#SetCursorPosBeforeReturning(placeholder_length)
+  if a:placeholder_length == 0
+    " If there is no placeholder, then just place the cursor at the start
+    " position determined above, and be done with it.
+    call setcharpos('.', [0, line("."), s:cursorStartPos])
+  else " a:placeholder_length >= 1
+
+    " If there is a placeholder, then the cursor is placed *after the
+    " first char* of that placeholder. The reason for that is that, when there
+    " is a placeholder, the function snipper#FigureOutWhatToReturn(), which
+    " should be called after this one, will do an <Esc>v, which makes the
+    " cursor go back one char. So for the cursor to be at s:cursorStartPos
+    " after that <Esc>v, it needs to be placed at s:cursorStartPos + 1 before
+    " that <Esc>v.
+    call setcharpos('.', [0, line("."), s:cursorStartPos + 1])
+  endif
+endfunction
+
 " Brief: Allow the processing of a snippet expansion to be interrupted, by
 " hitting either <Esc>, or <Ctrl-c>. This function captures that event, and
 " call snipper#ClearState(), to remove state information. This clears the way
@@ -432,6 +452,7 @@ function snipper#TriggerSnippet()
       " entered, at the *previous* tabstop (${s:nextTabStopNum - 1}).
       "
       let l:line = getline(".") " Current line.
+      let l:lineNum = line(".") " Current line.
       let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
       let l:lengthOfUserText = strcharlen(slice(l:line, s:cursorStartPos, l:charCol))
 
@@ -480,21 +501,17 @@ function snipper#TriggerSnippet()
       let [ l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
             \ s:tabStops[s:nextTabStopNum - 1]
 
-      " (cont.) Use that information to set the cursor position.
-      call setcharpos('.', [0, line("."), s:snippetInsertionPos + l:idxForCursor ])
-
       " NOTA BENE: function snipper#UpdateState() increaments
       " s:nextTabStopNum, which is the counter for this while loop.
-
       call snipper#UpdateState(l:snippet, l:idxForCursor)
 
+      call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
       return snipper#FigureOutWhatToReturn(l:placeHolderLength)
     endif
   endwhile
 
   let l:line = getline(".") " Current line.
   let l:currLineNum = line(".")
-  " let l:indent = indent(l:currLineNum)
 
   " col(".") returns the column the cursor is at, starting at 1. It counts
   " *byte* positions, not visible char positions. charcol(".") does the same
@@ -554,6 +571,7 @@ function snipper#TriggerSnippet()
     if len(l:triggerProcessedList) == 1
       if len(s:tabStops) == 0
         call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
+        " call snipper#SetCursorPosBeforeReturning()
         call setcharpos('.', [0, l:currLineNum,
                             \ l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
         " There is no ${1} tabstop, so we are done.
@@ -599,22 +617,8 @@ function snipper#TriggerSnippet()
       " cleanup actions (e.g., clean the state variables, etc.).
       call snipper#SetTraps()
 
-      if l:placeHolderLength == 0
-        " If there is no placeholder, then just place the cursor at the start
-        " position determined above, and be done with it.
-        call setcharpos('.', [0, l:currLineNum, s:cursorStartPos])
-        return snipper#FigureOutWhatToReturn(l:placeHolderLength)
-      else " l:placeHolderLength >= 1
-
-        " If there is a placeholder, then the cursor is placed *after the
-        " first char* of that placeholder.
-        call setcharpos('.', [0, l:currLineNum, s:cursorStartPos + 1])
-        " (cont.) The reason for that, is that the function
-        " snipper#FigureOutWhatToReturn() will do an <Esc>v, which makes the
-        " cursor go back one char. So for the cursor to be at s:cursorStartPos
-        " after that <Esc>v, it needs to be placed at s:cursorStartPos + 1
-        " before that <Esc>v.
-        return snipper#FigureOutWhatToReturn(l:placeHolderLength)
+      call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
+      return snipper#FigureOutWhatToReturn(l:placeHolderLength)
 
       endif
     else
