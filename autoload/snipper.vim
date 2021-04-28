@@ -480,15 +480,13 @@ function snipper#TriggerSnippet()
       let [ l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
             \ s:tabStops[s:nextTabStopNum - 1]
 
+      " (cont.) Use that information to set the cursor position.
       call setcharpos('.', [0, line("."), s:snippetInsertionPos + l:idxForCursor ])
 
-      " NOTA BENE: it should not be necessary here to check that
-      " s:nextTabStopNum only goes up to 9, because function
-      " snipper#ProcessSnippet() already checks for this.
+      " NOTA BENE: function snipper#UpdateState() increaments
+      " s:nextTabStopNum, which is the counter for this while loop.
 
-      let s:nextTabStopNum += 1
-      let s:partialSnipLen = strcharlen(l:snippet)
-      let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
+      call snipper#UpdateState(l:snippet, l:idxForCursor)
 
       return snipper#FigureOutWhatToReturn(l:placeHolderLength)
     endif
@@ -554,10 +552,10 @@ function snipper#TriggerSnippet()
     let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
     if len(l:triggerProcessedList) == 1
-      " let l:res = snipper#ProcessNthTabStop(l:triggerProcessedList[0], 1)
       if len(s:tabStops) == 0
         call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
-        call setcharpos('.', [0, line("."), l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
+        call setcharpos('.', [0, l:currLineNum,
+                            \ l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
         " There is no ${1} tabstop, so we are done.
         return ""
       endif
@@ -565,25 +563,17 @@ function snipper#TriggerSnippet()
       " Otherwise we process ${1}, and set s:nextTabStopNum to 2, which is the
       " next tabstop to be processed.
 
-      " l:res contains the expanded snippet, stripped of ${1:arg}, which was
-      " replaced with arg, if any. l:idxForCursor contains the array index
-      " (0-based) of the position of the '$' in ${1:arg}, in the expanded
-      " snippet. l:placeHolderLength is the (char) length of "arg".
       let l:snip = l:triggerExpansion
 
+      " l:idxForCursor contains the array index (0-based) of the position of
+      " the '$' in ${1:arg}, in the expanded snippet. l:placeHolderLength is
+      " the (char) length of "arg".
       let [ l:idxForCursor, l:placeHolderLength ; l:subsequent ] = s:tabStops[0] " index one less than trigger number!
 
       " As the expansion is a one-liner, the text that goes before it is the
       " text that came before the trigger. Likewise for the text that goes
       " after it.
       call setline(".", l:beforeTrigger . l:snip . l:afterTrigger)
-
-      " Save state information needed for processing ${2:arg}, if any.
-      let s:nextTabStopNum = 2 " Number of next tabstop.
-
-      " Length of the (partially processed) snippet that was inserted by
-      " setline() above. Includes the length of the placeholder text.
-      let s:partialSnipLen = strcharlen(l:snip)
 
       " The column (char-based) of the cursor at the point the snippet was
       " inserted (e.g., if the snippet was inserted at the start of the line,
@@ -600,24 +590,10 @@ function snipper#TriggerSnippet()
       " text -- "abc " in the example above -- contains non-ASCII characters.
       let s:snippetInsertionPos = l:charCol - l:triggerLength
 
-      " The column (char-based) at which the cursor is placed after the
-      " processing of the ${1:arg} tabstop. I.e., the column of the dollar
-      " sign.
-      "   As explained above, s:snippetInsertionPos contains the column at
-      " which the snippet text starts. Now l:idxForCursor contains the
-      " char-based, 0-based, index of the $ sign. For example, suppose you
-      " have a snippet like so (sans quotes): "\label{${1:arg}}". Then, for
-      " the first tabstop, l:idxForCursor will be 7. If this snippet is to be
-      " inserted in the first column, then s:cursorStartPos is 8. If on the
-      " second column, it is 9, and so on. Hence the cursor start position
-      " equals the snippet insert position, plus l:idxForCursor.
-      "   NOTA BENE: cursor positions, and string lengths are computed using
-      " functions that count characters, not bytes (composite characters,
-      " e.g. ã, or €, count as only character). Hence, this works even with
-      " snippets containing non-ASCII characters.
-      let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
-      " End of saving state information needed for processing the next
-      " tabstop.
+      " The s:snippetInsertionPos is only set once: after all, the snippet
+      " is only inserted at one point. The remaining state information is set
+      " in the UpdateState() function.
+      call snipper#UpdateState(l:snip, l:idxForCursor)
 
       " Set the mappings to catch <Esc>, or <Ctrl-c>, and do the necessary
       " cleanup actions (e.g., clean the state variables, etc.).
@@ -626,13 +602,13 @@ function snipper#TriggerSnippet()
       if l:placeHolderLength == 0
         " If there is no placeholder, then just place the cursor at the start
         " position determined above, and be done with it.
-        call setcharpos('.', [0, line("."), s:cursorStartPos])
+        call setcharpos('.', [0, l:currLineNum, s:cursorStartPos])
         return snipper#FigureOutWhatToReturn(l:placeHolderLength)
       else " l:placeHolderLength >= 1
 
         " If there is a placeholder, then the cursor is placed *after the
         " first char* of that placeholder.
-        call setcharpos('.', [0, line("."), s:cursorStartPos + 1])
+        call setcharpos('.', [0, l:currLineNum, s:cursorStartPos + 1])
         " (cont.) The reason for that, is that the function
         " snipper#FigureOutWhatToReturn() will do an <Esc>v, which makes the
         " cursor go back one char. So for the cursor to be at s:cursorStartPos
@@ -661,4 +637,39 @@ function snipper#TriggerSnippet()
   else " If there is no snippet to expand, then just return the Tab key.
     return "\<Tab>"
   endif
+endfunction
+
+" Brief: Takes care of updating state variables, except s:snippetInsertionPos,
+" the value of which is only set once (and hence, no needed for updates after
+" that).
+function snipper#UpdateState(snippet, idxForCursor)
+  if s:nextTabStopNum == 0
+    let s:nextTabStopNum = 2
+  else
+    " It should not be necessary here to check that s:nextTabStopNum only goes
+    " up to 9, because function snipper#ProcessSnippet() already checks for
+    " this.
+    let s:nextTabStopNum += 1
+  endif
+
+  " Length of the (partially processed) snippet that was inserted by setline()
+  " above. Includes the length of the placeholder text.
+  let s:partialSnipLen = strcharlen(a:snippet)
+
+  " The column (char-based) at which the cursor is placed after the processing
+  " of the ${1:arg} tabstop. I.e., the column of the dollar sign.
+  "   As explained in comments of the line where it is set, the variable
+  " s:snippetInsertionPos contains the column at which the snippet text
+  " starts. Now l:idxForCursor contains the char-based, 0-based, index of the
+  " $ sign. For example, suppose you have a snippet like so (sans quotes):
+  " "\label{${1:arg}}". Then, for the first tabstop, l:idxForCursor will be 7.
+  " If this snippet is to be inserted in the first column, then
+  " s:cursorStartPos is 8. If on the second column, it is 9, and so on. Hence
+  " the cursor start position equals the snippet insert position, plus
+  " l:idxForCursor.
+  "   NOTA BENE: cursor positions, and string lengths are computed using
+  " functions that count characters, not bytes (composite characters, e.g. ã,
+  " or €, count as only character). Hence, this works even with snippets
+  " containing non-ASCII characters.
+  let s:cursorStartPos = s:snippetInsertionPos + a:idxForCursor
 endfunction
