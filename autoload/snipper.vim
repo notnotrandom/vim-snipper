@@ -35,9 +35,21 @@ let g:snipper#snippetDeclarationLinePattern = '\m^snippet \zs\S\+\ze\(\s\|$\)'
 
 let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze'
 
+" Dictionary. Entries are like so: { trigger: snippet_text}. trigger contains
+" the trigger, snippet_text contains the snippet just as read from the snippet
+" file, including the ${1}, etc., but *without* the <Tab>'s at the start of
+" the lines.
 let s:snippets = {}
 
 let s:snippets_dir = fnameescape(expand(b:snipper_config.snippet_location))
+
+" Dictionary. Entries are like so:
+" {trigger : {'snippet': processed_snippet_text, 'tabstops': list}}, where
+" processed_snippet_text is the text of the snippet, stripped of tabstops,
+" with placeholders taking their place, if applicable. tabstops has the same
+" content that would go in s:tabStops, when processing the snippet triggered
+" by trigger. See documentation of s:tabStops for more information.
+let s:processedSnippets = {}
 
 " Variables for processing tabstops.
 
@@ -173,8 +185,8 @@ function snipper#ParseSnippetFile(snipFile)
     endif
   endfor
 
-  " When we reach the end of the .snippet file, so check if there is any
-  " pending trigger with body. If so, add them to the s:snippets dictionary.
+  " When we reach the end of the .snippet file, check if there is any pending
+  " trigger with body. If so, add them to the s:snippets dictionary.
   if l:currentSnippetKey != ""
     if len(l:snippetLinesList) > 0
       let s:snippets[l:currentSnippetKey] = l:snippetLinesList
@@ -186,7 +198,8 @@ function snipper#ParseSnippetFile(snipFile)
   endif
 endfunction
 
-" Taken from M. Sanders' snipMate, and (heavily!) modified.
+" This function sets the s:tabStops variable with the information for the
+" a:snip snippet.
 function snipper#ProcessSnippet(snip)
   if s:tabStops != []
     " When this function is called, any previous processing of any snippets
@@ -385,8 +398,9 @@ function snipper#ProcessSnippet(snip)
   return l:snippet
 endfunction
 
-" NOTA BENE: this functions requires the value of s:cursorStartPos for the
-" current snippet!!!
+" NOTA BENE: this function requires the value of s:cursorStartPos for the
+" current snippet!!! I.e., UpdateState() must be called before calling this
+" function!
 function snipper#SetCursorPosBeforeReturning(placeholder_length)
   if a:placeholder_length == 0
     " If there is no placeholder, then just place the cursor at the start
@@ -432,9 +446,10 @@ function snipper#TriggerSnippet()
   endif
 
   while s:nextTabStopNum != 0
-    " If s:nextTabStopNum is not its default value (0), that means that at
-    " least ${1} or ${1:arg} exists, so now we must see if there exists
-    " another tabstop, for the following digit.
+    " If s:nextTabStopNum is not its default value (0), that means that either
+    " ${s:nextTabStopNum - 1} or ${s:nextTabStopNum - 1:arg} exist, so now we
+    " must see if there exists a tabstop for the following digit, i.e.,
+    " s:nextTabStopNum.
     "   [len(s:tabStops) is the number (1-based) of the last tabstop in the
     " current snippet.]
     if s:nextTabStopNum > len(s:tabStops)
@@ -486,8 +501,8 @@ function snipper#TriggerSnippet()
       " s:tabStops). Thus, l:idxsToUpdate contains the *indexes* (not tabstop
       " numbers) of all tabstops that are (in the same line) to the right of
       " ${s:nextTabStopNum - 1}. For those, we need to keep the cursor char
-      " index accurate, we need to add to it the difference between the length
-      " of the user inserted text, and the length of the placeholder.
+      " index accurate, adding to it the difference between the length of the
+      " user inserted text, and the length of the placeholder.
       for idx in l:idxsToUpdate
         let s:tabStops[idx][0] += (l:lengthOfUserText - l:placeHolderLength)
       endfor
@@ -565,7 +580,29 @@ function snipper#TriggerSnippet()
   let l:afterTrigger = l:line[l:triggerEndCharIdx + 1 : ]
 
   if has_key(s:snippets, l:trigger) == v:true
-    let l:triggerExpansion = snipper#ProcessSnippet(join(s:snippets[l:trigger], "\n"))
+    " The snippet for l:trigger exists, so lets go on, erm, triggering it.
+
+    " Check if we had processed this snippet before. If so, no point in doing
+    " it all over again; just retrieve the previously store state information.
+    " Otherwise, need to process it from scratch.
+
+    let l:triggerExpansion = ""
+    if has_key(s:processedSnippets, l:trigger) == v:true
+      " We have seen this snippet before, so retrieve the needed information.
+      let l:triggerExpansion = s:processedSnippets[l:trigger]['snippet']
+      let s:tabStops = deepcopy(s:processedSnippets[l:trigger]['tabstops'])
+    else
+      " We have NOT seen this snippet before, so on we go with processing it.
+      " The snipper#ProcessSnippet() function will set the s:tabStops
+      " variable.
+      let l:triggerExpansion = snipper#ProcessSnippet(join(s:snippets[l:trigger], "\n"))
+
+      " Save the information resulting from the processing of the snippet,
+      " to use if we have to expand the same snippet again in the future.
+      let s:processedSnippets[l:trigger] = { 'snippet': l:triggerExpansion }
+      let s:processedSnippets[l:trigger]['tabstops'] = deepcopy(s:tabStops)
+    endif
+
     let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
     if len(l:triggerProcessedList) == 1
