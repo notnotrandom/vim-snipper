@@ -124,6 +124,45 @@ function snipper#FigureOutWhatToReturn(placeholder_length)
   endif
 endfunction
 
+function snipper#JumpToNextTabStop()
+  " echo "\<Esc>"
+  " execute "normal! \<Esc>"
+  if s:nextTabStopNum != 0
+    if s:nextTabStopNum > len(s:tabStops)
+      call snipper#ClearState()
+      return "\<Tab>"
+    else
+      call snipper#SetTraps()
+      " return "foo\<Tab>"
+
+      " s:nextTabStopNum - 1 is the current tabstop.
+      let [ l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
+            \ s:tabStops[s:nextTabStopNum - 1]
+
+      if s:nextTabStopNum == 0
+        let s:nextTabStopNum = 2
+      else
+        let s:nextTabStopNum += 1
+      endif
+
+      let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
+      echom "nextTabStopNum !".s:nextTabStopNum."!"
+      echom "!".s:snippetInsertionPos."!"
+      echom "!".l:idxForCursor."!"
+      echom "!".s:cursorStartPos."!"
+      echom "pholder len !".l:placeHolderLength."!"
+
+      " call setcharpos('.', [0, line("."), 18])
+      call setcharpos('.', [0, line("."), s:cursorStartPos + 1])
+      " return ""
+      " return "\<Esc>v"
+      return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
+    endif
+  endif
+  echom "foobarrr"
+  return "\<Esc>a"
+endfunction
+
 function snipper#ParseSnippetFile(snipFile)
   if g:snipper_debug | echomsg "Entering snipper#ParseSnippetFile()" | endif
   if g:snipper_debug | echomsg "Argument 1: " . a:snipFile | endif
@@ -445,7 +484,7 @@ function snipper#TriggerSnippet()
     endtry
   endif
 
-  while s:nextTabStopNum != 0
+  if s:nextTabStopNum != 0
     " If s:nextTabStopNum is not its default value (0), that means that either
     " ${s:nextTabStopNum - 1} or ${s:nextTabStopNum - 1:arg} exist, so now we
     " must see if there exists a tabstop for the following digit, i.e.,
@@ -508,7 +547,7 @@ function snipper#TriggerSnippet()
       endfor
 
       " At this point, processing ${s:nextTabStopNum - 1} is done. So we set
-      " the traps for the processing of ${s:nextTabStopNum}.
+      " the traps for the processing of the current tabsop, ${s:nextTabStopNum}.
       call snipper#SetTraps()
 
       " (cont.) And retrieve the information about ${s:nextTabStopNum} (which
@@ -517,13 +556,13 @@ function snipper#TriggerSnippet()
             \ s:tabStops[s:nextTabStopNum - 1]
 
       " NOTA BENE: function snipper#UpdateState() increaments
-      " s:nextTabStopNum, which is the counter for this while loop.
+      " s:nextTabStopNum, which is a part of the state that needs to be kept.
       call snipper#UpdateState(l:snippet, l:idxForCursor)
 
       call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
       return snipper#FigureOutWhatToReturn(l:placeHolderLength)
     endif
-  endwhile
+  endif
 
   let l:line = getline(".") " Current line.
   let l:currLineNum = line(".")

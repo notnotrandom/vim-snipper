@@ -62,3 +62,5 @@ au BufRead,BufNewFile *.snippets\= set ft=snippet
 au FileType snippet setl noet fdm=indent
 
 inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
+snoremap <silent> <Tab> vi<C-r>=snipper#JumpToNextTabStop()<CR>
+" snoremap <expr> <Tab> snipper#JumpToNextTabStop()
