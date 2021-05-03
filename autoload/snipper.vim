@@ -124,43 +124,47 @@ function snipper#FigureOutWhatToReturn(placeholder_length)
   endif
 endfunction
 
+" Brief: This function is called when the user decided to keep the
+" placeholder's text inplace; i.e., with the placeholder visually selected, he
+" hit <Tab>. Thus there is not much to do, except a simplified update of state
+" information. Then, just call snipper#SetCursorPosBeforeReturning(), and
+" snipper#FigureOutWhatToReturn(), and we are done.
 function snipper#JumpToNextTabStop()
-  " echo "\<Esc>"
-  " execute "normal! \<Esc>"
-  if s:nextTabStopNum != 0
-    if s:nextTabStopNum > len(s:tabStops)
-      call snipper#ClearState()
-      return "\<Tab>"
-    else
-      call snipper#SetTraps()
-      " return "foo\<Tab>"
-
-      " s:nextTabStopNum - 1 is the current tabstop.
-      let [ l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
-            \ s:tabStops[s:nextTabStopNum - 1]
-
-      if s:nextTabStopNum == 0
-        let s:nextTabStopNum = 2
-      else
-        let s:nextTabStopNum += 1
-      endif
-
-      let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
-      echom "nextTabStopNum !".s:nextTabStopNum."!"
-      echom "!".s:snippetInsertionPos."!"
-      echom "!".l:idxForCursor."!"
-      echom "!".s:cursorStartPos."!"
-      echom "pholder len !".l:placeHolderLength."!"
-
-      " call setcharpos('.', [0, line("."), 18])
-      call setcharpos('.', [0, line("."), s:cursorStartPos + 1])
-      " return ""
-      " return "\<Esc>v"
-      return "\<Esc>v" . (l:placeHolderLength - 1) . "l"
-    endif
+  if s:nextTabStopNum == 0
+    if g:snipper_debug | echomsg "In function snipper#JumpToNextTabStop(): " .
+          \ "caught s:nextTabStopNum = 0." | endif
+    return ""
   endif
-  echom "foobarrr"
-  return "\<Esc>a"
+
+  " If the placeholder for the last tabstop is visually selected, and the user
+  " hits <Tab>, then just return empty. (Recall that when this function is
+  " called, the cursor is, in insert mode, just to the right of the
+  " placeholder text. Cf. the mapping in after/plugin/vim-snipper.vim.)
+  if s:nextTabStopNum > len(s:tabStops)
+    call snipper#ClearState()
+    return ""
+  endif
+
+  " Set up <Esc> and <C-c> maps, in case the user decides to terminate the
+  " snippet processing.
+  call snipper#SetTraps()
+
+  " Grab the info the current tabstop (s:nextTabStopNum - 1 is the *index* for
+  " the current tabstop).
+  let [ l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
+        \ s:tabStops[s:nextTabStopNum - 1]
+
+  " Update the cursor start position for the current snippet.
+  let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
+
+  " Before finishing, increment the tabstop number. (The only update of this
+  " variable that does *not* increment it by one, is when it is 0 (in which
+  " case it is incremented by 2). But if control reaches here, then the
+  " variable is not 0 -- so its update is just += 1.)
+  let s:nextTabStopNum += 1
+
+  call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
+  return snipper#FigureOutWhatToReturn(l:placeHolderLength)
 endfunction
 
 function snipper#ParseSnippetFile(snipFile)
@@ -630,7 +634,7 @@ function snipper#TriggerSnippet()
       " We have seen this snippet before, so retrieve the needed information.
       let l:triggerExpansion = s:processedSnippets[l:trigger]['snippet']
       let s:tabStops = deepcopy(s:processedSnippets[l:trigger]['tabstops'])
-    else
+    else " has_key(s:processedSnippets, l:trigger) == v:false
       " We have NOT seen this snippet before, so on we go with processing it.
       " The snipper#ProcessSnippet() function will set the s:tabStops
       " variable.
@@ -640,7 +644,7 @@ function snipper#TriggerSnippet()
       " to use if we have to expand the same snippet again in the future.
       let s:processedSnippets[l:trigger] = { 'snippet': l:triggerExpansion }
       let s:processedSnippets[l:trigger]['tabstops'] = deepcopy(s:tabStops)
-    endif
+    endif " Check s:processedSnippets dict for key l:trigger.
 
     let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
@@ -696,8 +700,7 @@ function snipper#TriggerSnippet()
       call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
       return snipper#FigureOutWhatToReturn(l:placeHolderLength)
 
-      endif
-    else
+    else " ! len(l:triggerProcessedList) == 1
       " If the expansion has more than one line, for the time being, we just
       " strip it of any tabstops, and place it verbatim in the file. This is
       " done respecting the existing indentation level.
@@ -712,8 +715,8 @@ function snipper#TriggerSnippet()
             \ "'".strpart(l:line, 0, indent)."'.v:val"))
       call setline(l:currLineNum + l:numOfInsertedLines,
             \ getline(l:currLineNum + l:numOfInsertedLines) . l:afterTrigger)
-    endif
-    return ''
+    endif " Checked if snippet has only one line, or more than one line.
+    return "\<Esc>"
   else " If there is no snippet to expand, then just return the Tab key.
     return "\<Tab>"
   endif

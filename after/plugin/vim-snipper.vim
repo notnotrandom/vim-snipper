@@ -62,5 +62,14 @@ au BufRead,BufNewFile *.snippets\= set ft=snippet
 au FileType snippet setl noet fdm=indent
 
 inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
-snoremap <silent> <Tab> vi<C-r>=snipper#JumpToNextTabStop()<CR>
-" snoremap <expr> <Tab> snipper#JumpToNextTabStop()
+
+" This mapping for the scenario where the user decided to keep the
+" placeholder's text, and, with the placeholder text still selected, hits
+" <Tab>. In that case, we first disable select mode (^G), which renders us in
+" visual. Hitting 'v' disables visual mode, bringing us to normal mode. Now,
+" as the the visual selection is done left to right (cf.
+" snipper#FigureOutWhatToReturn()), after hitting 'v', the cursor is left on
+" the *rightmost* character of the placeholder. And so, hitting 'a' leaves the
+" cursor right after the placeholder text, as if the user had typed it
+" himself.
+snoremap <silent> <Tab> va<C-r>=snipper#JumpToNextTabStop()<CR>
