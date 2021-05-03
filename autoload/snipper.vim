@@ -271,15 +271,18 @@ function snipper#ProcessSnippet(snip)
     let l:snippet = substitute(l:snippet, '\\`', '`', 'g')
   endif
 
+  let l:placeHolders = []
+
   " Iterate over all tabstops in snippet. Replace each of them with either the
   " respective placeholder (if there is one), or with an empty string (if
   " there ain't). Also record relevant information about each tabstop in
   " s:tabStops.
   let l:tabStopNum = 1
+
   while 1
 
-    " Find tabstop number l:tabStopNum. For the first one, the regexp matches
-    " either ${1}, or ${1:placeholder}. For the former case, ${1}:
+    " Find tabstop number l:tabStopNum. E.g., for the first one, the regexp
+    " matches either ${1}, or ${1:placeholder}. For the former case, ${1}:
     " - the start byte index returned is that of the character before $, if
     "   there is one, or the byte index of $, if it is at the beginning of the
     "   snippet.
@@ -319,6 +322,8 @@ function snipper#ProcessSnippet(snip)
     " matchstrpos() function above will be '}'. Otherwise, it will be some
     " other char.
     if l:placeHolder[-1:] != '}' " There is a placeholder.
+      " XXX this is to remove... eventually.
+      call add(l:placeHolders, l:placeHolder) " Eg: placeholder for ${1:arg} has index 0
 
       " Here we take the snippet and replace ${1:placeholder} with
       " "placeholder", sans quotes (replace with any other digit for other
@@ -347,6 +352,8 @@ function snipper#ProcessSnippet(snip)
       let l:placeHolderLength = strcharlen(l:placeHolder)
 
     else " There is no placeholder.
+      " XXX this is to remove... eventually.
+      call add(l:placeHolders, "") " Eg: empty placeholder for ${1} has index 0
 
       " In the matchstrpos() used above, when there is no placeholder, that
       " start index will be either that of $, if it is the first char of the
@@ -419,6 +426,13 @@ function snipper#ProcessSnippet(snip)
       throw "TooManyTabStops"
     endif
   endwhile
+
+  " Replace $1, $2, etc with their respective placeholders, or empty string
+  " otherwise (tsn = tabstop number).
+  for tsn in range(1, len(l:placeHolders))
+    let l:snippet = substitute(l:snippet,
+          \ '\([^\\]\)\?\zs$'.tsn.'\ze', l:placeHolders[tsn-1], "g")
+  endfor
 
   " For all tabstops, add to s:tabStops the ones that are to the right of the
   " current one (in the same line). See comments of s:tabStops to see why this
@@ -704,19 +718,25 @@ function snipper#TriggerSnippet()
       " If the expansion has more than one line, for the time being, we just
       " strip it of any tabstops, and place it verbatim in the file. This is
       " done respecting the existing indentation level.
-      let l:triggerExpansion = substitute(l:triggerExpansion,
-            \ '\([^\\]\)${\d\(:\([^}]\+\)\)\?}', '\1', "g")
+
       let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
       call setline(".", l:beforeTrigger . l:triggerProcessedList[0] . l:afterTrigger)
       let l:numOfInsertedLines = len(l:triggerProcessedList) - 1
       let l:indent = matchend(l:line, '^.\{-}\ze\(\S\|$\)')
-      call append(l:currLineNum, map(l:triggerProcessedList[1:],
-            \ "'".strpart(l:line, 0, indent)."'.v:val"))
+      call append(l:currLineNum,
+                \ map(l:triggerProcessedList[1:], "'".strpart(l:line, 0, indent)."'.v:val"))
       call setline(l:currLineNum + l:numOfInsertedLines,
             \ getline(l:currLineNum + l:numOfInsertedLines) . l:afterTrigger)
+
+      " Before returning, clear s:tabStops; it is set by
+      " snipper#ProcessSnippet(), but for multi-line snippets, it is not
+      " cleared, as I cannot call snipper#ClearState() here -- it will
+      " complain about trying to clear esc and ctrl-c mappings which do not
+      " exist...
+      let s:tabStops = []
+      return "\<Esc>"
     endif " Checked if snippet has only one line, or more than one line.
-    return "\<Esc>"
   else " If there is no snippet to expand, then just return the Tab key.
     return "\<Tab>"
   endif
