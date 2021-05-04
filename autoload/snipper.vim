@@ -90,8 +90,20 @@ function snipper#BuildSnippetDict()
   endif
 endfunction
 
+" Brief: This function when the user decides to interrupt the processing of a
+" snippet. He can do this either by hitting <Esc>, or <Ctrl-c>, in which case
+" this function is called (the mappings for this are in function
+" snipper#SetTraps()).
+"
+" Synopsis: This functions clears state variables (i.e., sets them to their
+" default value), and unmaps the maps set up in snipper#SetTraps().
+"   Lastly, the user can decide to halt snippet processing when the mode is
+" either insert mode, or select mode. In former case, we just need to return
+" <Esc>, but in the latter, we must first exit select mode, by hitting ^G, and
+" only then return <Esc>. This is what the final if-else condition in this
+" function tests for.
+"
 function snipper#ClearState()
-  echom "mode: " . mode()
   let s:tabStops = []
   let s:partialSnipLen      = 0
   let s:snippetInsertionPos = -1
@@ -100,6 +112,13 @@ function snipper#ClearState()
 
   iunmap <buffer><expr> <Esc>
   sunmap <buffer><expr> <Esc>
+
+  iunmap <buffer><expr> <C-c>
+  sunmap <buffer><expr> <C-c>
+
+  " See snipper#SetTraps() for the explanation for the mapping that this line
+  " clears.
+  sunmap <buffer> <BS>
 
   if mode() == 's'
     return "\<Esc>"
@@ -485,6 +504,14 @@ function snipper#SetTraps()
   inoremap <buffer><expr> <C-c> snipper#ClearState()
   snoremap <buffer><expr> <Esc> snipper#ClearState()
   snoremap <buffer><expr> <C-c> snipper#ClearState()
+
+  " This map is here because if the user, having a visually selected
+  " placeholder (select mode), hits backspace, the placeholder text is
+  " deleted, *but the user is left in normal mode*. To fix this, i.e. to allow
+  " the user to continue either inserting text, or jumping to the next
+  " tabstop, I remap the backspace key to do backspace, and then go to insert
+  " mode.
+  snoremap <buffer> <BS> <BS>i
 endfunction
 
 function snipper#TriggerSnippet()
