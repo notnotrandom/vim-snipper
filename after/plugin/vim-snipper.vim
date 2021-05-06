@@ -34,10 +34,10 @@ if exists('g:snipper_config') && has_key(g:snipper_config, 'disable')
   endif
 endif
 
-if exists('b:vim_snipper_loaded')
+if exists('g:vim_snipper_loaded')
 	finish
 endif
-let b:vim_snipper_loaded = 1
+let g:vim_snipper_loaded = 1
 
 " Defaults.
 let b:snipper_config = {
@@ -48,10 +48,12 @@ let b:snipper_config = {
 
 " Override values with user preferences.
 if exists('g:snipper_config')
-  call extend(b:snipper_config, g:snipper_config)
+  call extend(g:snipper_config, b:snipper_config)
+else
+  let g:snipper_config = b:snipper_config
 endif
 
-if b:snipper_config.debug == 0
+if g:snipper_config.debug == 0
   let g:snipper_debug = v:false
 else
   let g:snipper_debug = v:true

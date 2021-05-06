@@ -41,7 +41,7 @@ let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze'
 " the lines.
 let s:snippets = {}
 
-let s:snippets_dir = fnameescape(expand(b:snipper_config.snippet_location))
+let s:snippets_dir = fnameescape(expand(g:snipper_config.snippet_location))
 
 " Dictionary. Entries are like so:
 " {trigger : {'snippet': processed_snippet_text, 'tabstops': list}}, where
