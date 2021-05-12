@@ -35,13 +35,15 @@ let g:snipper#snippetDeclarationLinePattern = '\m^snippet \zs\S\+\ze\(\s\|$\)'
 
 let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze'
 
+let s:global_key = "global_1234"
+
 " Dictionary. Entries are like so: { trigger: snippet_text}. trigger contains
 " the trigger, snippet_text contains the snippet just as read from the snippet
 " file, including the ${1}, etc., but *without* the <Tab>'s at the start of
 " the lines.
-let s:snippets = {}
+let g:snipper#snippets = {}
 
-let s:snippets_dir = fnameescape(expand(g:snipper_config.snippet_location))
+let g:snipper#snippets_dir = fnameescape(expand(g:snipper_config.snippet_location))
 
 " Dictionary. Entries are like so:
 " {trigger : {'snippet': processed_snippet_text, 'tabstops': list}}, where
@@ -49,10 +51,10 @@ let s:snippets_dir = fnameescape(expand(g:snipper_config.snippet_location))
 " with placeholders taking their place, if applicable. tabstops has the same
 " content that would go in s:tabStops, when processing the snippet triggered
 " by trigger. See documentation of s:tabStops for more information.
-let s:processedSnippets = {}
+let g:snipper#ProcessedSnippets = {}
 
-" Variables for processing tabstops.
-"
+" --- Variables for processing tabstops. ---
+
 " Each element with index i will correspond to tabstop i+1. Each element will
 " be a list with three elements:
 " - The char based index (so 0-based) of the position where the cursor must be
@@ -69,25 +71,44 @@ let s:processedSnippets = {}
 "   corresponds to tabstop 1+1 = 2, and indeed, ${2} is to the right of ${1}).
 let s:tabStops = []
 
-let s:partialSnipLen      = 0
-let s:snippetInsertionPos = -1
 let s:cursorStartPos      = -1
 let s:nextTabStopNum      = 0
-" End of variables for processing tabstops.
+let s:partialSnipLen      = 0
+let s:snippetInsertionPos = -1
+" --- End of variables for processing tabstops. ---
 
 function snipper#BuildSnippetDict()
-  " If .snippet files have been parsed before, then do not parse them again.
-  if len(s:snippets) != 0
-    return
+  " First, check if we have read global snippets. If we haven't, then, read
+  " them now.
+  if has_key(g:snipper#snippets, s:global_key) == v:false &&
+        \ filereadable(g:snipper#snippets_dir . "/" . "_.snippets") == v:true
+    call snipper#ParseSnippetFile(g:snipper#snippets_dir . "/" . "_.snippets", s:global_key)
   endif
 
-  if filereadable(s:snippets_dir . "/" . "_.snippets")
-    call snipper#ParseSnippetFile(s:snippets_dir . "/" . "_.snippets")
+  " And second, if the current file has a file type set, and we have not read
+  " snippets for that file type yet, and the relevant snippet file is
+  " readable, then parse that snippet file.
+  if &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:false &&
+        \ filereadable(g:snipper#snippets_dir . "/" . &filetype . ".snippets")
+    call snipper#ParseSnippetFile(g:snipper#snippets_dir . "/" . &filetype . ".snippets", &filetype)
+  endif
+endfunction
+
+" Returns the g:snipper#snippets hash key for the current snippet (either
+" global or the filetype)
+function snipper#CheckSnippetsExists(snip)
+  if has_key(g:snipper#snippets, s:global_key) == v:true &&
+        \ has_key(g:snipper#snippets[s:global_key], a:snip) == v:true
+    echom "returning global key"
+    return s:global_key
   endif
 
-  if &filetype != "" && filereadable(s:snippets_dir . "/" . &filetype . ".snippets")
-    call snipper#ParseSnippetFile(s:snippets_dir . "/" . &filetype . ".snippets")
+  if &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:true &&
+        \ has_key(g:snipper#snippets[&filetype], a:snip) == v:true
+    echom "returning filetype ". &filetype
+    return "" . &filetype
   endif
+  return v:false
 endfunction
 
 " Brief: This function when the user decides to interrupt the processing of a
@@ -186,9 +207,16 @@ function snipper#JumpToNextTabStop()
   return snipper#FigureOutWhatToReturn(l:placeHolderLength)
 endfunction
 
-function snipper#ParseSnippetFile(snipFile)
+function snipper#ParseSnippetFile(snipFile, filetype)
   if g:snipper_debug | echomsg "Entering snipper#ParseSnippetFile()" | endif
   if g:snipper_debug | echomsg "Argument 1: " . a:snipFile | endif
+  if g:snipper_debug | echomsg "Argument 2: " . a:filetype | endif
+
+  if has_key(g:snipper#snippets, a:filetype) == v:true
+    throw "RepeatedParsingOfFiletype"
+  endif
+
+  let g:snipper#snippets[a:filetype] = {}
 
   let l:currentSnippetKey = ""
   let l:snippetLinesList = []
@@ -205,7 +233,7 @@ function snipper#ParseSnippetFile(snipFile)
       " We found a "snippet trigger" line. So first, check to see if we have
       " found that trigger before. If so, throw up error, has multiple snips
       " are not supported.
-      if has_key(s:snippets, l:aux) == v:true
+      if has_key(g:snipper#snippets[a:filetype], l:aux) == v:true
         throw "DuplicateSnippetKeyFound"
         return
       endif
@@ -214,7 +242,7 @@ function snipper#ParseSnippetFile(snipFile)
       " the end of the previous trigger's expansion.
       if l:currentSnippetKey != ""
         if len(l:snippetLinesList) > 0
-          let s:snippets[l:currentSnippetKey] = l:snippetLinesList
+          let g:snipper#snippets[a:filetype][l:currentSnippetKey] = l:snippetLinesList
         else
           " Control reaches when there is a previous trigger, but no expansion
           " for it. Hence, throw error.
@@ -248,10 +276,10 @@ function snipper#ParseSnippetFile(snipFile)
   endfor
 
   " When we reach the end of the .snippet file, check if there is any pending
-  " trigger with body. If so, add them to the s:snippets dictionary.
+  " trigger with body. If so, add them to the g:snipper#snippets dictionary.
   if l:currentSnippetKey != ""
     if len(l:snippetLinesList) > 0
-      let s:snippets[l:currentSnippetKey] = l:snippetLinesList
+      let g:snipper#snippets[a:filetype][l:currentSnippetKey] = l:snippetLinesList
     else
       " Control reaches when there is a previous trigger, but no expansion
       " for it. Hence, throw error.
@@ -515,7 +543,8 @@ function snipper#SetTraps()
 endfunction
 
 function snipper#TriggerSnippet()
-  if len(s:snippets) == 0
+  if len(g:snipper#snippets) == 0 ||
+        \ ( &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:false )
     try
       call snipper#BuildSnippetDict()
     catch /^DuplicateSnippetKeyFound$/
@@ -526,6 +555,8 @@ function snipper#TriggerSnippet()
       echoerr "Found trigger without expansion!"
     catch /^InvalidLineFound$/
       echoerr "Invalid snippet line found!"
+    catch /^RepeatedParsingOfFiletype$/
+      echoerr "Repeated parsing of same file type!"
     endtry
   endif
 
@@ -663,7 +694,10 @@ function snipper#TriggerSnippet()
   " isn't, empty is returned -- which is what we want.
   let l:afterTrigger = l:line[l:triggerEndCharIdx + 1 : ]
 
-  if has_key(s:snippets, l:trigger) == v:true
+  " l:ley is either the file type, or global.
+  let l:key = snipper#CheckSnippetsExists(l:trigger)
+  echom "l:key before: ".l:key
+  if l:key != v:false
     " The snippet for l:trigger exists, so lets go on, erm, triggering it.
 
     " Check if we had processed this snippet before. If so, no point in doing
@@ -671,21 +705,27 @@ function snipper#TriggerSnippet()
     " Otherwise, need to process it from scratch.
 
     let l:triggerExpansion = ""
-    if has_key(s:processedSnippets, l:trigger) == v:true
+    if has_key(g:snipper#ProcessedSnippets, l:key) == v:true &&
+          \ has_key(g:snipper#ProcessedSnippets[l:key], l:trigger) == v:true
       " We have seen this snippet before, so retrieve the needed information.
-      let l:triggerExpansion = s:processedSnippets[l:trigger]['snippet']
-      let s:tabStops = deepcopy(s:processedSnippets[l:trigger]['tabstops'])
-    else " has_key(s:processedSnippets, l:trigger) == v:false
+      let l:triggerExpansion = g:snipper#ProcessedSnippets[l:key][l:trigger]['snippet']
+      let s:tabStops = deepcopy(g:snipper#ProcessedSnippets[l:key][l:trigger]['tabstops'])
+    else " has_key(g:snipper#ProcessedSnippets[l:key], l:trigger) is false.
       " We have NOT seen this snippet before, so on we go with processing it.
       " The snipper#ProcessSnippet() function will set the s:tabStops
       " variable.
-      let l:triggerExpansion = snipper#ProcessSnippet(join(s:snippets[l:trigger], "\n"))
+      echom "l:key: ".l:key
+      let l:triggerExpansion = snipper#ProcessSnippet(
+            \ join(g:snipper#snippets[l:key][l:trigger], "\n"))
 
       " Save the information resulting from the processing of the snippet,
       " to use if we have to expand the same snippet again in the future.
-      let s:processedSnippets[l:trigger] = { 'snippet': l:triggerExpansion }
-      let s:processedSnippets[l:trigger]['tabstops'] = deepcopy(s:tabStops)
-    endif " Check s:processedSnippets dict for key l:trigger.
+      if has_key(g:snipper#ProcessedSnippets, l:key) == v:false
+        let g:snipper#ProcessedSnippets[l:key] = {}
+      endif
+      let g:snipper#ProcessedSnippets[l:key][l:trigger] = { 'snippet': l:triggerExpansion }
+      let g:snipper#ProcessedSnippets[l:key][l:trigger]['tabstops'] = deepcopy(s:tabStops)
+    endif " Check g:snipper#ProcessedSnippets[ftype|global] dict for key l:trigger.
 
     let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
