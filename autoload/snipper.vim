@@ -52,7 +52,7 @@ let s:snippets_dir = fnameescape(expand(g:snipper_config.snippet_location))
 let s:processedSnippets = {}
 
 " Variables for processing tabstops.
-
+"
 " Each element with index i will correspond to tabstop i+1. Each element will
 " be a list with three elements:
 " - The char based index (so 0-based) of the position where the cursor must be
