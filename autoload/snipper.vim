@@ -35,28 +35,42 @@ let g:snipper#snippetDeclarationLinePattern = '\m^snippet \zs\S\+\ze\(\s\|$\)'
 
 let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze'
 
+" Value to use as the special "file type" for global snippets. See the
+" comments for g:snipper#snippets, below.
 let s:global_key = "global_1234"
 
-" Dictionary. Entries are like so: { trigger: snippet_text}. trigger contains
-" the trigger, snippet_text contains the snippet just as read from the snippet
-" file, including the ${1}, etc., but *without* the <Tab>'s at the start of
-" the lines.
+" Dictionary. Entries are like so: {filetype: { trigger: snippet_text}}. That
+" is, g:snipper#snippets is an hash table, whose keys are the different
+" filetypes, and values are themselves hash tables, containing the triggers as
+" keys, and the snippet text as values. (The global snippets are stored under
+" the special key s:global_key.)
+"
+" snippet_text contains the snippet just as read from the snippet file,
+" including the ${1}, etc., but *without* the <Tab>'s at the start of the
+" lines.
 let g:snipper#snippets = {}
 
 let g:snipper#snippets_dir = fnameescape(expand(g:snipper_config.snippet_location))
 
 " Dictionary. Entries are like so:
-" {trigger : {'snippet': processed_snippet_text, 'tabstops': list}}, where
-" processed_snippet_text is the text of the snippet, stripped of tabstops,
-" with placeholders taking their place, if applicable. tabstops has the same
-" content that would go in s:tabStops, when processing the snippet triggered
-" by trigger. See documentation of s:tabStops for more information.
+"
+" {filetype: {trigger : {'snippet': processed_snippet_text, 'tabstops': list}}}
+"
+" That is, g:snipper#ProcessedSnippets is an hash table, with the keys being
+" the filetypes (this is similar to g:snipper#snippets; cf. its comments).
+"
+" The values are themselves hash tables, with two keys, viz., "snippet" and
+" "tabstops" (these are strings, not variables). The processed_snippet_text
+" variable is the text of the snippet, stripped of tabstops, with placeholders
+" taking their place, if applicable. The list variable has the same content
+" that would go in s:tabStops, when processing the snippet triggered by
+" trigger. See documentation of s:tabStops for more information.
 let g:snipper#ProcessedSnippets = {}
 
 " --- Variables for processing tabstops. ---
 
 " Each element with index i will correspond to tabstop i+1. Each element will
-" be a list with three elements:
+" itself be a list with three elements:
 " - The char based index (so 0-based) of the position where the cursor must be
 "   placed (position 0 is the start of the snippet). This is the position of
 "   the $ character (of the i+1 tabstop).
@@ -78,11 +92,12 @@ let s:snippetInsertionPos = -1
 " --- End of variables for processing tabstops. ---
 
 function snipper#BuildSnippetDict()
-  " First, check if we have read global snippets. If we haven't, then, read
+  " First, check if we have read global snippets. If we haven't, then, parse
   " them now.
   if has_key(g:snipper#snippets, s:global_key) == v:false &&
         \ filereadable(g:snipper#snippets_dir . "/" . "_.snippets") == v:true
-    call snipper#ParseSnippetFile(g:snipper#snippets_dir . "/" . "_.snippets", s:global_key)
+    call snipper#ParseSnippetFile(
+          \ g:snipper#snippets_dir . "/" . "_.snippets", s:global_key)
   endif
 
   " And second, if the current file has a file type set, and we have not read
@@ -90,21 +105,30 @@ function snipper#BuildSnippetDict()
   " readable, then parse that snippet file.
   if &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:false &&
         \ filereadable(g:snipper#snippets_dir . "/" . &filetype . ".snippets")
-    call snipper#ParseSnippetFile(g:snipper#snippets_dir . "/" . &filetype . ".snippets", &filetype)
+    call snipper#ParseSnippetFile(
+          \ g:snipper#snippets_dir . "/" . &filetype . ".snippets", &filetype)
   endif
 endfunction
 
-" Returns the g:snipper#snippets hash key for the current snippet (either
-" global or the filetype)
-function snipper#CheckSnippetsExists(snip)
+" Brief: If the current file has no file type set, then any trigger for it
+" must be under the s:global_key sub-hash in g:snipper#snippets (cf. this
+" latter variable's comments, near the top of this file). But if there *is* a
+" file type set, then any trigger can be either under the s:global_key
+" sub-hash, or under the &filetype sub-hash. The same holds for the
+" g:snipper#ProcessedSnippets hash table.
+"   This function returns the hash key for the current snippet trigger (either
+" global or the filetype), for both g:snipper#snippets and
+" g:snipper#ProcessedSnippets. If the trigger does not exist, then return
+" v:false.
+function snipper#CheckSnippetExists(trigger)
   if has_key(g:snipper#snippets, s:global_key) == v:true &&
-        \ has_key(g:snipper#snippets[s:global_key], a:snip) == v:true
+        \ has_key(g:snipper#snippets[s:global_key], a:trigger) == v:true
     echom "returning global key"
     return s:global_key
   endif
 
   if &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:true &&
-        \ has_key(g:snipper#snippets[&filetype], a:snip) == v:true
+        \ has_key(g:snipper#snippets[&filetype], a:trigger) == v:true
     echom "returning filetype ". &filetype
     return "" . &filetype
   endif
@@ -213,9 +237,13 @@ function snipper#ParseSnippetFile(snipFile, filetype)
   if g:snipper_debug | echomsg "Argument 2: " . a:filetype | endif
 
   if has_key(g:snipper#snippets, a:filetype) == v:true
+    " We have parsed the snippets file for this particular filetype, so this
+    " function should not have been called (cf. snipper#BuildSnippetDict()).
+    " Hence, fire away exception.
     throw "RepeatedParsingOfFiletype"
   endif
 
+  " Otherwise, add sub-hash for a:filetype.
   let g:snipper#snippets[a:filetype] = {}
 
   let l:currentSnippetKey = ""
@@ -694,9 +722,10 @@ function snipper#TriggerSnippet()
   " isn't, empty is returned -- which is what we want.
   let l:afterTrigger = l:line[l:triggerEndCharIdx + 1 : ]
 
-  " l:ley is either the file type, or global.
-  let l:key = snipper#CheckSnippetsExists(l:trigger)
-  echom "l:key before: ".l:key
+  " l:key is the key under which the trigger is, in the g:snipper#snippets
+  " hash table. It is either the file type, or global (or v:false, if the
+  " trigger could not be found).
+  let l:key = snipper#CheckSnippetExists(l:trigger)
   if l:key != v:false
     " The snippet for l:trigger exists, so lets go on, erm, triggering it.
 
@@ -714,15 +743,16 @@ function snipper#TriggerSnippet()
       " We have NOT seen this snippet before, so on we go with processing it.
       " The snipper#ProcessSnippet() function will set the s:tabStops
       " variable.
-      echom "l:key: ".l:key
       let l:triggerExpansion = snipper#ProcessSnippet(
             \ join(g:snipper#snippets[l:key][l:trigger], "\n"))
 
       " Save the information resulting from the processing of the snippet,
       " to use if we have to expand the same snippet again in the future.
+      " First, create the sub-hash, if needed.
       if has_key(g:snipper#ProcessedSnippets, l:key) == v:false
         let g:snipper#ProcessedSnippets[l:key] = {}
       endif
+      " Then store the processing information.
       let g:snipper#ProcessedSnippets[l:key][l:trigger] = { 'snippet': l:triggerExpansion }
       let g:snipper#ProcessedSnippets[l:key][l:trigger]['tabstops'] = deepcopy(s:tabStops)
     endif " Check g:snipper#ProcessedSnippets[ftype|global] dict for key l:trigger.
