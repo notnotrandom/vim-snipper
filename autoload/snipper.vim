@@ -818,11 +818,11 @@ function snipper#TriggerSnippet()
 
       let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
-      call setline(".", l:beforeTrigger . l:triggerProcessedList[0] . l:afterTrigger)
+      call setline(".", l:beforeTrigger . l:triggerProcessedList[0])
       let l:numOfInsertedLines = len(l:triggerProcessedList) - 1
       let l:indent = matchend(l:line, '^.\{-}\ze\(\S\|$\)')
       call append(l:currLineNum,
-                \ map(l:triggerProcessedList[1:], "'".strpart(l:line, 0, indent)."'.v:val"))
+                \ map(l:triggerProcessedList[1:], "'".strpart(l:line, 0, l:indent)."'.v:val"))
       call setline(l:currLineNum + l:numOfInsertedLines,
             \ getline(l:currLineNum + l:numOfInsertedLines) . l:afterTrigger)
 
