@@ -1,7 +1,6 @@
 " Vim snippets plugin
 " Languages:    any
 " Maintainer:   Óscar Pereira
-" Version:      0.1
 " License:      GPL
 
 "************************************************************************

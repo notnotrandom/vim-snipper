@@ -1,7 +1,6 @@
 " Vim snippets plugin
 " Languages:    any
 " Maintainer:   Óscar Pereira
-" Version:      0.1
 " License:      GPL
 
 "************************************************************************
@@ -33,7 +32,7 @@ let g:snipper#emptyLinePattern = '\m^$'
 " optional.
 let g:snipper#snippetDeclarationLinePattern = '\m^snippet \zs\S\+\ze\(\s\|$\)'
 
-let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze'
+let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze$'
 
 " Value to use as the special "file type" for global snippets. See the
 " comments for g:snipper#snippets, below.
@@ -87,11 +86,25 @@ let g:snipper#ProcessedSnippets = {}
 "   corresponds to tabstop 1+1 = 2, and indeed, ${2} is to the right of ${1}).
 let s:tabStops = []
 
-let s:cursorStartPos      = -1
-let s:nextTabStopNum      = 0
-let s:partialSnipLen      = 0
+" For the tabstop currently being processed, the column position of the '$'
+" sign. 
+let s:cursorStartPos = -1
+
+" Should be self-explanatory.
+let s:nextTabStopNum = 0
+
+" Line number where the trigger was entered. It will contain the first line of
+" the snippet.
+let s:snippetInsertionLineNum = -1
+
+" Column number (char based), where the trigger started. Will be the start of
+" the first line of the snippet.
 let s:snippetInsertionPos = -1
-let s:snippetLineIdx      = -1
+
+" Index (0-based) of the snippet line currently being processed. So the first
+" line is line 0, the second line 1, etc.
+let s:snippetLineIdx = -1
+
 " --- End of variables for processing tabstops. ---
 
 function snipper#BuildSnippetDict()
@@ -126,13 +139,15 @@ endfunction
 function snipper#CheckSnippetExists(trigger)
   if has_key(g:snipper#snippets, s:global_key) == v:true &&
         \ has_key(g:snipper#snippets[s:global_key], a:trigger) == v:true
-    echom "returning global key"
+    if g:snipper_debug | echomsg "In function snipper#CheckSnippetExists(): " .
+          \ "Returning global key." | endif
     return s:global_key
   endif
 
   if &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:true &&
         \ has_key(g:snipper#snippets[&filetype], a:trigger) == v:true
-    echom "returning filetype ". &filetype
+    if g:snipper_debug | echomsg "In function snipper#CheckSnippetExists(): " .
+          \ "Returning filetype ". &filetype . "." | endif
     return "" . &filetype
   endif
   return v:false
@@ -152,12 +167,12 @@ endfunction
 " function tests for.
 "
 function snipper#ClearState()
-  let s:cursorStartPos      = -1
-  let s:nextTabStopNum      = 0
-  let s:partialSnipLen      = 0
-  let s:snippetInsertionPos = -1
-  let s:snippetLineIdx      = -1
-  let s:tabStops = []
+  let s:cursorStartPos          = -1
+  let s:nextTabStopNum          = 0
+  let s:snippetInsertionPos     = -1
+  let s:snippetInsertionLineNum = -1
+  let s:snippetLineIdx          = -1
+  let s:tabStops                = []
 
   iunmap <buffer><expr> <Esc>
   sunmap <buffer><expr> <Esc>
@@ -222,7 +237,8 @@ function snipper#JumpToNextTabStop()
   let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
         \ s:tabStops[s:nextTabStopNum - 1]
 
-  " Update the cursor start position for the current snippet.
+  " Update the cursor start line and column position for the current snippet.
+  let s:snippetLineIdx = l:idxForLine
   let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
 
   " Before finishing, increment the tabstop number. (The only update of this
@@ -298,6 +314,7 @@ function snipper#ParseSnippetFile(snipFile, filetype)
         " expansion of a snippet. So add it to the list of expansion lines,
         " and continue onto to the next line.
         call add(l:snippetLinesList, l:aux[0])
+        " call add(l:snippetLinesList, trim(l:aux[0], "\n\r", 2))
         continue
       else
         " We found a line that is not a comment, is not a "snippet trigger"
@@ -336,6 +353,12 @@ function snipper#ProcessSnippet(snip)
   endif
 
   let l:snippet = join(a:snip, "\n")
+
+  if &expandtab " Expand tabs to spaces if 'expandtab' is set.
+    let l:snippet = substitute(l:snippet, '\t',
+          \ repeat(' ', &softtabstop ? &softtabstop : &shiftwidth), 'g')
+  endif
+
   " Evaluate eval (`...`) expressions. Backquotes prefixed with a backslash
   " "\" are ignored. Using a loop here instead of a regex fixes a bug with
   " nested "\=".
@@ -346,9 +369,6 @@ function snipper#ProcessSnippet(snip)
                                                \ l:snippet, '\(^\|[^\\]\)`\zs.\{-}[^\\]\ze`')),
                                         \ "\n\\%$", '', ''), '')
     endwhile
-
-    " Fix newlines.
-    " let l:snippet = substitute(l:snippet, "\r", "\n", 'g')
 
     " The above while loop dealt with embedded eval expressions. Now replace
     " escaped backticks with "plain" backticks -- as they will no longer be
@@ -516,7 +536,6 @@ function snipper#ProcessSnippet(snip)
     let l:snippetLineList[l:snippetCurrLineIdx] = l:snippetCurrLine
 
     " See the comments for s:tabStops, at the start of the file.
-    echom " l:startCharIdxForCurrTabStop: " . l:startCharIdxForCurrTabStop
     call add(s:tabStops, [ l:snippetCurrLineIdx, l:startCharIdxForCurrTabStop,
                          \ l:placeHolderLength, [] ] )
 
@@ -548,10 +567,20 @@ function snipper#ProcessSnippet(snip)
   " For all tabstops, add to s:tabStops the ones that are to the right of the
   " current one (in the same line). See comments of s:tabStops to see why this
   " is done.
+  "
+  " Note: This cannot be done inside the while loop above, because when
+  " processing, say, tabstop n, we still do not have information about
+  " tabstops n+1 onwards. And conversely, the updating of previous tabstops
+  " that is done inside a for loop, which it itself inside the while loop,
+  " cannot be done here, because we need to know, for each tabstop, whether a
+  " placeholder exists or not (and if so, its length).
   for idx in range(len(s:tabStops))
-    let l:startCharIdxForCurrTabStop = s:tabStops[idx][1]
+    let l:lineIdx = s:tabStops[idx][0]
+    let l:colPos = s:tabStops[idx][1]
     for jdx in range(len(s:tabStops))
-      if s:tabStops[jdx][1] > l:startCharIdxForCurrTabStop
+      if s:tabStops[jdx][0] == l:lineIdx && s:tabStops[jdx][1] > l:colPos
+        " Above if-cond holds if snippets idx and jdx are on the same line...
+
         call add(s:tabStops[idx][3], jdx) " Keep the INDEX, not tabstopnum, of tabstops in front of the current one.
       endif
     endfor
@@ -566,10 +595,6 @@ function snipper#ProcessSnippet(snip)
           \ '\([^\\]\)\?\zs$'.tsn.'\ze', l:placeHolders[tsn-1], "g")
   endfor
 
-  if &expandtab " Expand tabs to spaces if 'expandtab' is set.
-    return substitute(l:snippet, '\t',
-          \ repeat(' ', &softtabstop ? &softtabstop : &shiftwidth), 'g')
-  endif
   return l:snippet
 endfunction
 
@@ -580,7 +605,8 @@ function snipper#SetCursorPosBeforeReturning(placeholder_length)
   if a:placeholder_length == 0
     " If there is no placeholder, then just place the cursor at the start
     " position determined above, and be done with it.
-    call setcharpos('.', [0, line(".") + s:snippetLineIdx, s:cursorStartPos])
+    call setcharpos('.', [0, s:snippetInsertionLineNum +
+                        \ s:snippetLineIdx, s:cursorStartPos])
   else " a:placeholder_length >= 1
 
     " If there is a placeholder, then the cursor is placed *after the
@@ -590,7 +616,8 @@ function snipper#SetCursorPosBeforeReturning(placeholder_length)
     " cursor go back one char. So for the cursor to be at s:cursorStartPos
     " after that <Esc>v, it needs to be placed at s:cursorStartPos + 1 before
     " that <Esc>v.
-    call setcharpos('.', [0, line(".") + s:snippetLineIdx, s:cursorStartPos + 1])
+    call setcharpos('.', [0, s:snippetInsertionLineNum +
+                        \ s:snippetLineIdx, s:cursorStartPos + 1])
   endif
 endfunction
 
@@ -663,25 +690,6 @@ function snipper#TriggerSnippet()
       let [ l:idxForLine, l:idxForCursor, l:placeHolderLength, l:idxsToUpdate ] =
             \ s:tabStops[s:nextTabStopNum - 2]
 
-      " (cont.) From that previous information, compute the column of the last
-      " character of the snippet, i.e., the snippet's end position. To see why
-      " we need to subtract 1, imagine that the snippet is at the start of the
-      " line, i.e., that s:snippetInsertionPos = 1 (variables with "Pos" in
-      " their name refer to column positions). If s:partialSnipLen is, say, 3,
-      " that means that the last char of the snippet is at column 3. But 1 + 3
-      " = 4, so we need to subtract 1.
-      " let l:snippetEndPos = s:snippetInsertionPos + s:partialSnipLen - 1 +
-            " \ l:placeHolderLength + l:lengthOfUserText
-
-      " So now we have the start and ending positions of the snippet, so we
-      " can extract it from the current line. Recall that "Pos" variables
-      " refer to column positions, but slice works with char indexes. So we
-      " have to use s:snippetInsertionPos - 1 for start of the slice. For its
-      " ending, the slice() function actually excludes the ending index (much
-      " like Python), so we need one plus the ending index l:snippetEndPos -
-      " 1, i.e., l:snippetEndPos.
-      " let l:snippet =  slice(l:line, s:snippetInsertionPos - 1, l:snippetEndPos)
-
       " Keep in mind that we are still working with the *previous* tabstop,
       " ${s:nextTabStopNum - 1} (which has index s:nextTabStopNum - 2 in
       " s:tabStops). Thus, l:idxsToUpdate contains the *indexes* (not tabstop
@@ -746,7 +754,7 @@ function snipper#TriggerSnippet()
   " Now, after the above while loop, l:prevCharIdx contain the array idx of
   " the first character of the trigger word.
 
-  " NOTA BENE: trigger must be ASCII only!
+  " NOTA BENE: trigger must be ALPHANUMERIC only!
   let l:triggerLength = l:triggerEndCharIdx - l:prevCharIdx + 1
   let l:trigger = strpart(l:line, l:prevCharIdx, l:triggerLength)
 
@@ -770,110 +778,124 @@ function snipper#TriggerSnippet()
   " hash table. It is either the file type, or global (or v:false, if the
   " trigger could not be found).
   let l:key = snipper#CheckSnippetExists(l:trigger)
-  if l:key != v:false
-    " The snippet for l:trigger exists, so lets go on, erm, triggering it.
-
-    " Check if we had processed this snippet before. If so, no point in doing
-    " it all over again; just retrieve the previously store state information.
-    " Otherwise, need to process it from scratch.
-
-    let l:triggerExpansion = ""
-    if has_key(g:snipper#ProcessedSnippets, l:key) == v:true &&
-          \ has_key(g:snipper#ProcessedSnippets[l:key], l:trigger) == v:true
-      " We have seen this snippet before, so retrieve the needed information.
-      let l:triggerExpansion = g:snipper#ProcessedSnippets[l:key][l:trigger]['snippet']
-      let s:tabStops = deepcopy(g:snipper#ProcessedSnippets[l:key][l:trigger]['tabstops'])
-    else " has_key(g:snipper#ProcessedSnippets[l:key], l:trigger) is false.
-      " We have NOT seen this snippet before, so on we go with processing it.
-      " The snipper#ProcessSnippet() function will set the s:tabStops
-      " variable.
-      " let l:triggerExpansion = snipper#ProcessSnippet(
-      "       \ join(g:snipper#snippets[l:key][l:trigger], "\n"))
-      let l:triggerExpansion = snipper#ProcessSnippet(g:snipper#snippets[l:key][l:trigger])
-
-      " Save the information resulting from the processing of the snippet,
-      " to use if we have to expand the same snippet again in the future.
-      " First, create the sub-hash, if needed.
-      if has_key(g:snipper#ProcessedSnippets, l:key) == v:false
-        let g:snipper#ProcessedSnippets[l:key] = {}
-      endif
-      " Then store the processing information.
-      let g:snipper#ProcessedSnippets[l:key][l:trigger] =
-            \ { 'snippet': l:triggerExpansion, 'tabstops': deepcopy(s:tabStops) }
-    endif " Check g:snipper#ProcessedSnippets[ftype|global] dict for key l:trigger.
-
-    let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
-
-    if len(s:tabStops) == 0
-      call setline(".", l:beforeTrigger . l:triggerExpansion . l:afterTrigger)
-      " call snipper#SetCursorPosBeforeReturning()
-      call setcharpos('.', [0, l:currLineNum,
-                          \ l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
-      " There is no ${1} tabstop, so we are done.
-      return ""
-    endif
-
-    " Otherwise we process ${1}, and set s:nextTabStopNum to 2, which is the
-    " next tabstop to be processed.
-
-    " let l:snip = l:triggerExpansion
-
-    " l:idxForCursor contains the array index (0-based) of the position of
-    " the '$' in ${1:arg}, in the expanded snippet. l:placeHolderLength is
-    " the (char) length of "arg".
-    let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
-          \ = s:tabStops[0] " index one less than trigger number!
-
-    " As the expansion is a one-liner, the text that goes before it is the
-    " text that came before the trigger. Likewise for the text that goes
-    " after it.
-    " call setline(".", l:beforeTrigger . l:snip . l:afterTrigger)
-
-    let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
-
-    call setline(".", l:beforeTrigger . l:triggerProcessedList[0])
-    let l:numOfInsertedLines = len(l:triggerProcessedList) - 1
-    let l:indent = matchend(l:line, '^.\{-}\ze\(\S\|$\)')
-    call append(l:currLineNum,
-              \ map(l:triggerProcessedList[1:], "'".strpart(l:line, 0, l:indent)."'.v:val"))
-    call setline(l:currLineNum + l:numOfInsertedLines,
-          \ getline(l:currLineNum + l:numOfInsertedLines) . l:afterTrigger)
-
-    " The column (char-based) of the cursor at the point the snippet was
-    " inserted (e.g., if the snippet was inserted at the start of the line,
-    " then s:snippetInsertionPos = 1).
-    "   To see why it is computed in this way, imagine a line containing the
-    " string "abc ", with the cursor after the ' ', in insert mode, when the
-    " user types the trigger "xpto", and hits Tab. So the snippet insert
-    " position will be after the "abc " string, and this is column position
-    " 5. Now, after typing "xpto", the cursor will be at column 9 -- so this
-    " will be the value of l:charCol. And the trigger length is 4. Hence,
-    " the snippet insert position will be 9 - 4 = 5, as expected.
-    "   NOTA BENE: l:charCol is computed with the function charcol(), and
-    " the trigger has to be ASCII only, so this works even if the previous
-    " text -- "abc " in the example above -- contains non-ASCII characters.
-    let s:snippetInsertionPos = l:charCol - l:triggerLength
-
-    " The s:snippetInsertionPos is only set once: after all, the snippet
-    " is only inserted at one point. The remaining state information is set
-    " in the UpdateState() function.
-    " call snipper#UpdateState(l:snip, l:idxForLine, l:idxForCursor)
-    call snipper#UpdateState(l:idxForLine, l:idxForCursor)
-
-    " Set the mappings to catch <Esc>, or <Ctrl-c>, and do the necessary
-    " cleanup actions (e.g., clean the state variables, etc.).
-    call snipper#SetTraps()
-
-    " The next two functions place the cursor at the first tabstop location
-    " (remember that the "${1}" string is no longer there), and visually
-    " select the placeholder, if any, and go to select mode. (If there is no
-    " placeholder, just place the cursor at the location where the $ in ${1}
-    " used to be.)
-    call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
-    return snipper#FigureOutWhatToReturn(l:placeHolderLength)
-  else " If there is no snippet to expand, then just return the Tab key.
+  if l:key == v:false
+    " If there is no snippet to expand, then just return the Tab key.
     return "\<Tab>"
   endif
+
+  " The snippet for l:trigger exists, so lets go on, erm, triggering it.
+
+  " Check if we had processed this snippet before. If so, no point in doing
+  " it all over again; just retrieve the previously store state information.
+  " Otherwise, need to process it from scratch.
+
+  let l:triggerExpansion = ""
+  if has_key(g:snipper#ProcessedSnippets, l:key) == v:true &&
+        \ has_key(g:snipper#ProcessedSnippets[l:key], l:trigger) == v:true
+    " We have seen this snippet before, so retrieve the needed information.
+    let l:triggerExpansion = g:snipper#ProcessedSnippets[l:key][l:trigger]['snippet']
+    let s:tabStops = deepcopy(g:snipper#ProcessedSnippets[l:key][l:trigger]['tabstops'])
+  else " has_key(g:snipper#ProcessedSnippets[l:key], l:trigger) is false.
+    " We have NOT seen this snippet before, so on we go with processing it.
+    " The snipper#ProcessSnippet() function will set the s:tabStops
+    " variable.
+    " let l:triggerExpansion = snipper#ProcessSnippet(
+    "       \ join(g:snipper#snippets[l:key][l:trigger], "\n"))
+    let l:triggerExpansion = snipper#ProcessSnippet(g:snipper#snippets[l:key][l:trigger])
+
+    " Save the information resulting from the processing of the snippet,
+    " to use if we have to expand the same snippet again in the future.
+    " First, create the sub-hash, if needed.
+    if has_key(g:snipper#ProcessedSnippets, l:key) == v:false
+      let g:snipper#ProcessedSnippets[l:key] = {}
+    endif
+    " Then store the processing information.
+    let g:snipper#ProcessedSnippets[l:key][l:trigger] =
+          \ { 'snippet': l:triggerExpansion, 'tabstops': deepcopy(s:tabStops) }
+  endif " Check g:snipper#ProcessedSnippets[ftype|global] dict for key l:trigger.
+
+  let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
+
+  let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
+
+  " Insert the processed and expanded lines into the snippet. These line have
+  " the tabstops removed, and replaced with placeholders, if applicable.
+  call setline(".", l:beforeTrigger . l:triggerProcessedList[0])
+  let l:numOfInsertedLinesMinusOne = len(l:triggerProcessedList) - 1
+  let l:indent = matchend(l:line, '^.\{-}\ze\(\S\|$\)')
+  call append(l:currLineNum,
+            \ map(l:triggerProcessedList[1:], "'".strpart(l:line, 0, l:indent)."'.v:val"))
+  call setline(l:currLineNum + l:numOfInsertedLinesMinusOne,
+        \ getline(l:currLineNum + l:numOfInsertedLinesMinusOne) . l:afterTrigger)
+
+  if len(s:tabStops) == 0
+    " If there are no tabstops, then just place the cursor at the end of
+    " inserted snippet, and return an empty string.
+
+    if l:numOfInsertedLinesMinusOne == 0
+      " If we just inserted one line, then the cursor pos is the current pos
+      " plus the length of the expansion, minus the length of the trigger
+      " text.
+      call setcharpos('.', [0, l:currLineNum,
+                          \ l:charCol + strcharlen(l:triggerExpansion) - l:triggerLength])
+    else
+      " If we inserted more than one line, then place the cursor at the end of
+      " the last inserted line. That line is line number l:currLineNum +
+      " l:numOfInsertedLinesMinusOne; and the column position is the length of
+      " that line. (Remember that column positions start at 1. Also, if we
+      " enter a 3-char string at the start of the line, then the cursor pos is
+      " 4. Hence we need to add + 1.)
+      call setcharpos('.', [0, l:currLineNum + l:numOfInsertedLinesMinusOne,
+            \ l:indent + strcharlen(l:triggerProcessedList[l:numOfInsertedLinesMinusOne]) + 1])
+    endif
+
+    return ""
+  endif " if len(s:tabStops) == 0
+
+  " Otherwise we process the first one, ${1}, and call UpdateState(), to
+  " prepare the processing of the next tabstop, should it exist.
+
+  " This is only set once.
+  let s:snippetInsertionLineNum = l:currLineNum
+
+  " The column (char-based) of the cursor at the point the snippet was
+  " inserted (e.g., if the snippet was inserted at the start of the line,
+  " then s:snippetInsertionPos = 1).
+  "   To see why it is computed in this way, imagine a line containing the
+  " string "abc ", with the cursor after the ' ', in insert mode, when the
+  " user types the trigger "xpto", and hits Tab. So the snippet insert
+  " position will be after the "abc " string, and this is column position 5.
+  " Now, after typing "xpto", the cursor will be at column 9 -- so this will
+  " be the value of l:charCol. And the trigger length is 4. Hence, the snippet
+  " insert position will be 9 - 4 = 5, as expected.
+  "   NOTA BENE: l:charCol is computed with the function charcol(), and the
+  " trigger has to be ASCII only, so this works even if the previous text
+  " -- "abc " in the example above -- contains non-ASCII characters.
+  let s:snippetInsertionPos = l:charCol - l:triggerLength
+
+  " l:idxForCursor contains the array index (0-based) of the position of the
+  " '$' in ${1:arg}, in the expanded snippet. l:placeHolderLength is the
+  " (char) length of "arg".
+  let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
+        \ = s:tabStops[0] " index one less than trigger number!
+
+  " The s:snippetInsertionPos is only set once: after all, the snippet is only
+  " inserted at one point. The remaining state information is set in the
+  " UpdateState() function. call snipper#UpdateState(l:snip, l:idxForLine,
+  " l:idxForCursor)
+  call snipper#UpdateState(l:idxForLine, l:idxForCursor)
+
+  " Set the mappings to catch <Esc>, or <Ctrl-c>, and do the necessary cleanup
+  " actions (e.g., clean the state variables, etc.).
+  call snipper#SetTraps()
+
+  " The next two functions place the cursor at the first tabstop location
+  " (remember that the "${1}" string is no longer there), and visually select
+  " the placeholder, if any, and go to select mode. (If there is no
+  " placeholder, just place the cursor at the location where the $ in ${1}
+  " used to be.)
+  call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
+  return snipper#FigureOutWhatToReturn(l:placeHolderLength)
 endfunction
 
 " Brief: Takes care of updating state variables, except s:snippetInsertionPos,
@@ -889,11 +911,7 @@ function snipper#UpdateState(idxForLine, idxForCursor)
     let s:nextTabStopNum += 1
   endif
 
-  " Length of the (partially processed) snippet that was inserted by setline()
-  " in function snipper#TriggerSnippet(). Includes the length of the
-  " placeholder text.
-  " let s:partialSnipLen = strcharlen(a:snippet)
-
+  " See comments for s:snippetLineIdx.
   let s:snippetLineIdx = a:idxForLine
 
   " The column (char-based) at which the cursor is placed after the processing
@@ -911,8 +929,5 @@ function snipper#UpdateState(idxForLine, idxForCursor)
   " functions that count characters, not bytes (composite characters, e.g. ã,
   " or €, count as only character). Hence, this works even with snippets
   " containing non-ASCII characters.
-  echom "snip ins pos: " . s:snippetInsertionPos
-  echom "idx for cur: " . a:idxForCursor
   let s:cursorStartPos = s:snippetInsertionPos + a:idxForCursor
-  echom "cur start pos: " . s:cursorStartPos
 endfunction
