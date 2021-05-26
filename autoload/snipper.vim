@@ -58,7 +58,7 @@ let g:snipper#snippets_dir = fnameescape(expand(g:snipper_config.snippet_locatio
 " That is, g:snipper#ProcessedSnippets is an hash table, with the keys being
 " the filetypes (this is similar to g:snipper#snippets; cf. its comments).
 "
-" The values are themselves hash tables, with two keys, viz., "snippet" and
+" The values are themselves dictionaries, with two keys, viz., "snippet" and
 " "tabstops" (these are strings, not variables). The processed_snippet_text
 " variable is the text of the snippet, stripped of tabstops, with placeholders
 " taking their place, if applicable. The list variable has the same content
@@ -70,20 +70,21 @@ let g:snipper#ProcessedSnippets = {}
 
 " Each element with index i will correspond to tabstop i+1. Each element will
 " itself be a list with three elements:
-" - The index (so 0-based) of the snippet line where the cursor must be placed
-"   (index 0 is the first line of the snippet).
-" - The char based index (so 0-based) of the position where the cursor must be
-"   placed (position 0 is the start of the snippet). This is the position of
-"   the $ character (of the i+1 tabstop).
-" - The char length of the placeholder for tabstop i+1. It is 0 if there is no
-"   placeholder.
-" - A list of the INDEXES that are to the right of the current tabstop. This
-"   is needed because after changing the current tabstop, the positions
+" - 0: The index (so 0-based) of the snippet line where the cursor must be
+"   placed (index 0 is the first line of the snippet).
+" - 1: The char based index (so 0-based) of the position where the cursor must
+"   be placed (position 0 is the start of the snippet). This is the position
+"   of the $ character (of the i+1 tabstop).
+" - 2: The char length of the placeholder for tabstop i+1. It is 0 if there is
+"   no placeholder.
+" - 3: A list of the INDEXES that are to the right of the current tabstop.
+"   This is needed because after changing the current tabstop, the positions
 "   relative to those tabstops further down the line very likely need to be
 "   modified.
 "     For example, consider a snippet like: "\emph{${1}}${2}". The list of
 "   indexes for the first element (i.e. s:tabStops[0]) will be [1] (the 1
 "   corresponds to tabstop 1+1 = 2, and indeed, ${2} is to the right of ${1}).
+" - 4: INDEXES of passive tabstops.
 let s:tabStops = []
 
 " For the tabstop currently being processed, the column position of the '$'
@@ -153,10 +154,10 @@ function snipper#CheckSnippetExists(trigger)
   return v:false
 endfunction
 
-" Brief: This function when the user decides to interrupt the processing of a
-" snippet. He can do this either by hitting <Esc>, or <Ctrl-c>, in which case
-" this function is called (the mappings for this are in function
-" snipper#SetTraps()).
+" Brief: This function is called when the user decides to interrupt the
+" processing of a snippet. He can do this either by hitting <Esc>, or
+" <Ctrl-c>, in which case this function is called (the mappings for this are
+" in function snipper#SetTraps()).
 "
 " Synopsis: This functions clears state variables (i.e., sets them to their
 " default value), and unmaps the maps set up in snipper#SetTraps().
@@ -340,11 +341,11 @@ endfunction
 " Brief: This function sets the s:tabStops variable with the information for
 " the a:snip snippet.
 "
-" Return: the snippet a:snip, as a string, with $1, $2, etc. replaced with
-" their respective placeholders (or an empty string, for tabstops without a
-" placeholder).
+" Return: the snippet a:snip, as a string, with both ${1}, ${2}, etc., and $1,
+" $2, etc., replaced with their respective placeholders (or an empty string,
+" for tabstops without a placeholder).
 "
-" a:snip is a list, containing the lines of the snippet expansion.
+" Parameters: a:snip is a list, containing the lines of the snippet expansion.
 function snipper#ProcessSnippet(snip)
   if s:tabStops != []
     " When this function is called, any previous processing of any snippets
@@ -537,7 +538,7 @@ function snipper#ProcessSnippet(snip)
 
     " See the comments for s:tabStops, at the start of the file.
     call add(s:tabStops, [ l:snippetCurrLineIdx, l:startCharIdxForCurrTabStop,
-                         \ l:placeHolderLength, [] ] )
+                         \ l:placeHolderLength, [], []] )
 
     " Update previous tabstops that are on the same line, and to the right of
     " the current one. Because in that case, replacing ${d:foo} with foo, or
@@ -559,7 +560,7 @@ function snipper#ProcessSnippet(snip)
 
     let l:tabStopNum += 1
     if l:tabStopNum == 10
-      if g:snipper_debug | echomsg "Only 9 tabstops allowed: ${1} to ${9}." | endif
+      if g:snipper_debug | echomsg "Exceeded limit of 9 tabstops (${1} to ${9})." | endif
       throw "TooManyTabStops"
     endif
   endwhile
@@ -571,30 +572,129 @@ function snipper#ProcessSnippet(snip)
   " Note: This cannot be done inside the while loop above, because when
   " processing, say, tabstop n, we still do not have information about
   " tabstops n+1 onwards. And conversely, the updating of previous tabstops
-  " that is done inside a for loop, which it itself inside the while loop,
-  " cannot be done here, because we need to know, for each tabstop, whether a
-  " placeholder exists or not (and if so, its length).
+  " that is done inside a for loop, which is itself inside the while loop,
+  " could be done here, but the code becomes VERY error-prone (I've tried...).
   for idx in range(len(s:tabStops))
     let l:lineIdx = s:tabStops[idx][0]
     let l:colPos = s:tabStops[idx][1]
     for jdx in range(len(s:tabStops))
       if s:tabStops[jdx][0] == l:lineIdx && s:tabStops[jdx][1] > l:colPos
-        " Above if-cond holds if snippets idx and jdx are on the same line...
+        " Above if-cond's first condition holds if snippets idx and jdx are on
+        " the same line...
 
         call add(s:tabStops[idx][3], jdx) " Keep the INDEX, not tabstopnum, of tabstops in front of the current one.
       endif
     endfor
   endfor
 
-  let l:snippet = join(l:snippetLineList, "\n")
+  return snipper#ProcessSnippetPassiveTabStops(l:snippetLineList, l:placeHolders)
+endfunction
 
+function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList)
+  " XXX check internal state properly cleared!
+  let s:passiveTabStops = {}
+  let l:currKey = 97 " Key for dict s:passiveTabStops; to be used with nr2char().
+  let s:groupedPassiveTabStopsList = []
+
+  " let l:snippet = join(a:snippetLineList, "\n")
   " Replace $1, $2, etc with their respective placeholders, or empty string
   " otherwise (tsn = tabstop number).
-  for tsn in range(1, len(l:placeHolders))
-    let l:snippet = substitute(l:snippet,
-          \ '\([^\\]\)\?\zs$'.tsn.'\ze', l:placeHolders[tsn-1], "g")
+  " for tsn in range(1, len(a:placeHoldersList))
+  "   let l:snippet = substitute(l:snippet,
+  "         \ '\([^\\]\)\?\zs$'.tsn.'\ze', a:placeHoldersList[tsn-1], "g")
+  " endfor
+  " return l:snippet
+
+  let l:snippetLineList = a:snippetLineList
+  for tsn in range(1, len(a:placeHoldersList))
+    call add(s:groupedPassiveTabStopsList, [])
+
+    for idx in range(len(a:snippetLineList))
+      let l:snippetCurrLineIdx = idx
+      let l:line = l:snippetLineList[idx]
+
+      let [ l:matchedText, l:startIdx, l:endIdx ] = ["", -1, -1]
+
+      let l:startPosForMatch = 0
+      while 1
+        let [ l:matchedText, l:startIdx, l:endIdx ] =
+            \ matchstrpos(l:line, '\([^\\]\)\?\zs$'.tsn.'\ze', l:startPosForMatch)
+
+        if l:matchedText == "" && l:startIdx == -1 && l:endIdx == -1
+          " If there are no (more) matches for tabstop tsn in this line, then go
+          " check the next one.
+          break
+        endif
+
+        let l:startPosForMatch = l:endIdx
+
+        let l:placeHolder = a:placeHoldersList[tsn-1]
+        let l:startCharIdx = charidx(l:line, l:startIdx) " Start char idx for curr tabstop.
+        let l:endCharIdx = charidx(l:line, l:endIdx)
+
+        " Replace $1 or whatever with its placeholder (i.e., ${1:placeholder}).
+        let l:line = strcharpart(l:line, 0, l:startCharIdx)
+              \ . l:placeHolder . strcharpart(l:line, l:endCharIdx)
+
+        " Update previous passive tabstops, in the same line, to the right of
+        " the current one.
+        for elem in values(s:passiveTabStops)
+          if elem[0] == l:snippetCurrLineIdx && elem[1] > l:startCharIdx
+            let elem[1] += (l:placeHolderLength - 2)
+          endif
+        endfor
+
+        let s:passiveTabStops[nr2char(l:currKey)] =
+              \ [ l:snippetCurrLineIdx, l:startCharIdx, [], [] ]
+        call add(s:groupedPassiveTabStopsList[tsn - 1], nr2char(l:currKey))
+
+        let l:currKey += 1
+        if l:currKey == 123 " 122 corresponds to z, so that's it!!
+          if g:snipper_debug | echomsg "Exceeded limit of 26 passive tabstops!" | endif
+          throw "MaxNumberOfPassiveTabStopsExceeded"
+        endif
+      endwhile
+
+      let l:snippetLineList[l:snippetCurrLineIdx] = l:line
+    endfor
   endfor
 
+  " We have finished parsing the passive tabstops (and replacing them with
+  " placehoders, where applicable). So now have to establish "same line
+  " dependencies". That is, if two tabstops (passive or not), are in the same
+  " line, then one must be to the right of the other. Here we store that
+  " information. (Actually, in the above function snipper#ProcessSnippet(), we
+  " deal with the case of two regular tabstops in the same line. Here deal
+  " with the 3 remaining possibilities.)
+  for l:key in keys(s:passiveTabStops)
+    let l:lineIdx = s:passiveTabStops[l:key][0]
+    let l:colPos  = s:passiveTabStops[l:key][1]
+
+    for idx in range(len(s:tabStops))
+      let l:rts = s:tabStops[idx] " rts = regular tabstop.
+      if l:lineIdx == l:rts[0] && l:rts[1] > l:colPos
+        call add(s:passiveTabStops[l:key][2], idx) " Kept IDX, not tabstop number.
+      elseif l:lineIdx == l:rts[0] && l:rts[1] < l:colPos
+        call add(s:tabStops[idx][4], l:key)
+      " elseif l:lineIdx == l:rts[0] &&
+      "       \ l:rts[1] == l:colPos <-- Cannot happen.
+      endif
+    endfor
+
+    for l:key2 in keys(s:passiveTabStops)
+      if l:lineIdx == s:passiveTabStops[l:key2][0] &&
+            \ s:passiveTabStops[l:key2][1] > l:colPos
+        call add(s:passiveTabStops[l:key][3], l:key)
+      " There is no else clause, for we do not need to check the "opposite"
+      " condition, viz., s:passiveTabStops[l:key2][1] < l:colPos. This is
+      " because in this for loop, we generate all possible ORDERED PAIRS, and
+      " so just one inequality condition suffices. (After all, if a != b, then
+      " either a > b, or a < b.)
+      endif
+    endfor
+  endfor
+
+  let l:snippet = join(a:snippetLineList, "\n")
   return l:snippet
 endfunction
 
@@ -687,8 +787,8 @@ function snipper#TriggerSnippet()
       " (cont.) Obtain the record for that previous tabstop. (Recall that the
       " current tabstop has index s:nextTabStopNum - 1, so the index of the
       " previous one is s:nextTabStopNum - 2).
-      let [ l:idxForLine, l:idxForCursor, l:placeHolderLength, l:idxsToUpdate ] =
-            \ s:tabStops[s:nextTabStopNum - 2]
+      let [ l:idxForLine, l:idxForCursor, l:placeHolderLength, l:idxsToUpdate,
+            \ l:passiveIdxsToUpdate ] = s:tabStops[s:nextTabStopNum - 2]
 
       " Keep in mind that we are still working with the *previous* tabstop,
       " ${s:nextTabStopNum - 1} (which has index s:nextTabStopNum - 2 in
@@ -813,8 +913,6 @@ function snipper#TriggerSnippet()
     let g:snipper#ProcessedSnippets[l:key][l:trigger] =
           \ { 'snippet': l:triggerExpansion, 'tabstops': deepcopy(s:tabStops) }
   endif " Check g:snipper#ProcessedSnippets[ftype|global] dict for key l:trigger.
-
-  let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
   let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
 
