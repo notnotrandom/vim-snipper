@@ -34,6 +34,9 @@ let g:snipper#snippetDeclarationLinePattern = '\m^snippet \zs\S\+\ze\(\s\|$\)'
 
 let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze$'
 
+" Key for dict s:passiveTabStops; to be used with nr2char().
+let s:passiveTabStopsStartNumHashKey = 97
+
 " Value to use as the special "file type" for global snippets. See the
 " comments for g:snipper#snippets, below.
 let s:global_key = "global_1234"
@@ -68,6 +71,29 @@ let g:snipper#ProcessedSnippets = {}
 
 " --- Variables for processing tabstops. ---
 
+" For the tabstop currently being processed, the column position of the '$'
+" sign. 
+let s:cursorStartPos = -1
+
+let s:groupedPassiveTabStopsList = []
+
+" Should be self-explanatory.
+let s:nextTabStopNum = 0
+
+let s:passiveTabStops = {}
+
+" Line number where the trigger was entered. It will contain the first line of
+" the snippet.
+let s:snippetInsertionLineNum = -1
+
+" Column number (char based), where the trigger started. Will be the start of
+" the first line of the snippet.
+let s:snippetInsertionPos = -1
+
+" Index (0-based) of the snippet line currently being processed. So the first
+" line is line 0, the second line 1, etc.
+let s:snippetLineIdx = -1
+
 " Each element with index i will correspond to tabstop i+1. Each element will
 " itself be a list with three elements:
 " - 0: The index (so 0-based) of the snippet line where the cursor must be
@@ -86,25 +112,6 @@ let g:snipper#ProcessedSnippets = {}
 "   corresponds to tabstop 1+1 = 2, and indeed, ${2} is to the right of ${1}).
 " - 4: INDEXES of passive tabstops.
 let s:tabStops = []
-
-" For the tabstop currently being processed, the column position of the '$'
-" sign. 
-let s:cursorStartPos = -1
-
-" Should be self-explanatory.
-let s:nextTabStopNum = 0
-
-" Line number where the trigger was entered. It will contain the first line of
-" the snippet.
-let s:snippetInsertionLineNum = -1
-
-" Column number (char based), where the trigger started. Will be the start of
-" the first line of the snippet.
-let s:snippetInsertionPos = -1
-
-" Index (0-based) of the snippet line currently being processed. So the first
-" line is line 0, the second line 1, etc.
-let s:snippetLineIdx = -1
 
 " --- End of variables for processing tabstops. ---
 
@@ -168,12 +175,14 @@ endfunction
 " function tests for.
 "
 function snipper#ClearState()
-  let s:cursorStartPos          = -1
-  let s:nextTabStopNum          = 0
-  let s:snippetInsertionPos     = -1
-  let s:snippetInsertionLineNum = -1
-  let s:snippetLineIdx          = -1
-  let s:tabStops                = []
+  let s:cursorStartPos             = -1
+  let s:groupedPassiveTabStopsList = []
+  let s:nextTabStopNum             = 0
+  let s:passiveTabStops            = {}
+  let s:snippetInsertionPos        = -1
+  let s:snippetInsertionLineNum    = -1
+  let s:snippetLineIdx             = -1
+  let s:tabStops                   = []
 
   iunmap <buffer><expr> <Esc>
   sunmap <buffer><expr> <Esc>
@@ -591,19 +600,12 @@ function snipper#ProcessSnippet(snip)
 endfunction
 
 function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList)
-  " XXX check internal state properly cleared!
-  let s:passiveTabStops = {}
-  let l:currKey = 97 " Key for dict s:passiveTabStops; to be used with nr2char().
-  let s:groupedPassiveTabStopsList = []
-
-  " let l:snippet = join(a:snippetLineList, "\n")
-  " Replace $1, $2, etc with their respective placeholders, or empty string
-  " otherwise (tsn = tabstop number).
-  " for tsn in range(1, len(a:placeHoldersList))
-  "   let l:snippet = substitute(l:snippet,
-  "         \ '\([^\\]\)\?\zs$'.tsn.'\ze', a:placeHoldersList[tsn-1], "g")
-  " endfor
-  " return l:snippet
+  if s:passiveTabStops != {} && s:groupedPassiveTabStopsList != []
+    " When this function is called, any previous processing of any snippets
+    " should either have been completed, or be properly cleared.
+    throw "InternalStateNotProperlyCleared"
+  endif
+  let l:currKey = s:passiveTabStopsStartNumHashKey
 
   let l:snippetLineList = a:snippetLineList
   for tsn in range(1, len(a:placeHoldersList))
@@ -685,6 +687,7 @@ function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList
       if l:lineIdx == s:passiveTabStops[l:key2][0] &&
             \ s:passiveTabStops[l:key2][1] > l:colPos
         call add(s:passiveTabStops[l:key][3], l:key)
+
       " There is no else clause, for we do not need to check the "opposite"
       " condition, viz., s:passiveTabStops[l:key2][1] < l:colPos. This is
       " because in this for loop, we generate all possible ORDERED PAIRS, and
@@ -770,55 +773,58 @@ function snipper#TriggerSnippet()
       " return <Tab> (the user did press the <Tab> key, after all).
       call snipper#ClearState()
       return "\<Tab>"
-    else
-      " There is a ${s:nextTabStopNum} tabstop, so go process it. Control
-      " arrives here because at ${s:nextTabStopNum - 1}, the user typed the
-      " text he wanted, and then hit <Tab>. And that brought him to the
-      " current tabstop, viz. {s:nextTabStopNum}.
-      "   Start by obtaining the current line, and current cursor position.
-      " From both of those, compute the char length of the text the user
-      " entered, at the *previous* tabstop (${s:nextTabStopNum - 1}).
-      "
-      let l:line = getline(".") " Current line.
-      let l:lineNum = line(".") " Current line number.
-      let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
-      let l:lengthOfUserText = strcharlen(slice(l:line, s:cursorStartPos, l:charCol))
-
-      " (cont.) Obtain the record for that previous tabstop. (Recall that the
-      " current tabstop has index s:nextTabStopNum - 1, so the index of the
-      " previous one is s:nextTabStopNum - 2).
-      let [ l:idxForLine, l:idxForCursor, l:placeHolderLength, l:idxsToUpdate,
-            \ l:passiveIdxsToUpdate ] = s:tabStops[s:nextTabStopNum - 2]
-
-      " Keep in mind that we are still working with the *previous* tabstop,
-      " ${s:nextTabStopNum - 1} (which has index s:nextTabStopNum - 2 in
-      " s:tabStops). Thus, l:idxsToUpdate contains the *indexes* (not tabstop
-      " numbers) of all tabstops that are (in the same line) to the right of
-      " ${s:nextTabStopNum - 1}. For those, we need to keep the cursor char
-      " index accurate, adding to it the difference between the length of the
-      " user inserted text, and the length of the placeholder.
-      for idx in l:idxsToUpdate
-        let s:tabStops[idx][1] += (l:lengthOfUserText - l:placeHolderLength)
-      endfor
-
-      " At this point, processing ${s:nextTabStopNum - 1} is done. So we set
-      " the traps for the processing of the current tabsop, ${s:nextTabStopNum}.
-      call snipper#SetTraps()
-
-      " (cont.) And retrieve the information about ${s:nextTabStopNum} (which
-      " has index s:nextTabStopNum - 1).
-      let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
-            \ s:tabStops[s:nextTabStopNum - 1]
-
-      " NOTA BENE: function snipper#UpdateState() increaments
-      " s:nextTabStopNum, which is a part of the state that needs to be kept.
-      " call snipper#UpdateState(l:snippet, l:idxForCursor)
-      call snipper#UpdateState(l:idxForLine, l:idxForCursor)
-
-      call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
-      return snipper#FigureOutWhatToReturn(l:placeHolderLength)
     endif
+
+    " There is a ${s:nextTabStopNum} tabstop, so go process it. Control
+    " arrives here because at ${s:nextTabStopNum - 1}, the user typed the
+    " text he wanted, and then hit <Tab>. And that brought him to the
+    " current tabstop, viz. {s:nextTabStopNum}.
+    "   Start by obtaining the current line, and current cursor position.
+    " From both of those, compute the char length of the text the user
+    " entered, at the *previous* tabstop (${s:nextTabStopNum - 1}).
+    "
+    let l:line = getline(".") " Current line.
+    let l:lineNum = line(".") " Current line number.
+    let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
+    let l:lengthOfUserText = strcharlen(slice(l:line, s:cursorStartPos, l:charCol))
+
+    " (cont.) Obtain the record for that previous tabstop. (Recall that the
+    " current tabstop has index s:nextTabStopNum - 1, so the index of the
+    " previous one is s:nextTabStopNum - 2).
+    let [ l:idxForLine, l:idxForCursor, l:placeHolderLength, l:idxsToUpdate,
+          \ l:passiveIdxsToUpdate ] = s:tabStops[s:nextTabStopNum - 2]
+
+    " Keep in mind that we are still working with the *previous* tabstop,
+    " ${s:nextTabStopNum - 1} (which has index s:nextTabStopNum - 2 in
+    " s:tabStops). Thus, l:idxsToUpdate contains the *indexes* (not tabstop
+    " numbers) of all tabstops that are (in the same line) to the right of
+    " ${s:nextTabStopNum - 1}. For those, we need to keep the cursor char
+    " index accurate, adding to it the difference between the length of the
+    " user inserted text, and the length of the placeholder.
+    for idx in l:idxsToUpdate
+      let s:tabStops[idx][1] += (l:lengthOfUserText - l:placeHolderLength)
+    endfor
+
+    " At this point, processing ${s:nextTabStopNum - 1} is done. So we set
+    " the traps for the processing of the current tabsop, ${s:nextTabStopNum}.
+    call snipper#SetTraps()
+
+    " (cont.) And retrieve the information about ${s:nextTabStopNum} (which
+    " has index s:nextTabStopNum - 1).
+    let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
+          \ s:tabStops[s:nextTabStopNum - 1]
+
+    " NOTA BENE: function snipper#UpdateState() increaments
+    " s:nextTabStopNum, which is a part of the state that needs to be kept.
+    " call snipper#UpdateState(l:snippet, l:idxForCursor)
+    call snipper#UpdateState(l:idxForLine, l:idxForCursor)
+
+    call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
+    return snipper#FigureOutWhatToReturn(l:placeHolderLength)
   endif
+
+  " If control reaches here, it means the user just entered a trigger and hit
+  " <Tab>. So let us see if there is anything to process.
 
   let l:line = getline(".") " Current line.
   let l:currLineNum = line(".")
@@ -895,13 +901,12 @@ function snipper#TriggerSnippet()
     " We have seen this snippet before, so retrieve the needed information.
     let l:triggerExpansion = g:snipper#ProcessedSnippets[l:key][l:trigger]['snippet']
     let s:tabStops = deepcopy(g:snipper#ProcessedSnippets[l:key][l:trigger]['tabstops'])
-  else " has_key(g:snipper#ProcessedSnippets[l:key], l:trigger) is false.
+  else
     " We have NOT seen this snippet before, so on we go with processing it.
     " The snipper#ProcessSnippet() function will set the s:tabStops
     " variable.
-    " let l:triggerExpansion = snipper#ProcessSnippet(
-    "       \ join(g:snipper#snippets[l:key][l:trigger], "\n"))
-    let l:triggerExpansion = snipper#ProcessSnippet(g:snipper#snippets[l:key][l:trigger])
+    let l:triggerExpansion =
+          \ snipper#ProcessSnippet(g:snipper#snippets[l:key][l:trigger])
 
     " Save the information resulting from the processing of the snippet,
     " to use if we have to expand the same snippet again in the future.
@@ -943,18 +948,16 @@ function snipper#TriggerSnippet()
       " that line. (Remember that column positions start at 1. Also, if we
       " enter a 3-char string at the start of the line, then the cursor pos is
       " 4. Hence we need to add + 1.)
-      call setcharpos('.', [0, l:currLineNum + l:numOfInsertedLinesMinusOne,
-            \ l:indent + strcharlen(l:triggerProcessedList[l:numOfInsertedLinesMinusOne]) + 1])
+      call setcharpos('.', [0, l:currLineNum + l:numOfInsertedLinesMinusOne, l:indent +
+            \ strcharlen(l:triggerProcessedList[l:numOfInsertedLinesMinusOne]) + 1])
     endif
 
     return ""
   endif " if len(s:tabStops) == 0
 
-  " Otherwise we process the first one, ${1}, and call UpdateState(), to
-  " prepare the processing of the next tabstop, should it exist.
-
-  " This is only set once.
-  let s:snippetInsertionLineNum = l:currLineNum
+  " Otherwise there are tabsopts to process. So we process the first one,
+  " ${1}, and call UpdateState(), to prepare the processing of the next
+  " tabstop, should it exist.
 
   " The column (char-based) of the cursor at the point the snippet was
   " inserted (e.g., if the snippet was inserted at the start of the line,
@@ -970,6 +973,9 @@ function snipper#TriggerSnippet()
   " trigger has to be ASCII only, so this works even if the previous text
   " -- "abc " in the example above -- contains non-ASCII characters.
   let s:snippetInsertionPos = l:charCol - l:triggerLength
+  " Like s:snippetInsertionPos, this var (s:snippetInsertionLineNum) is only
+  " set once.
+  let s:snippetInsertionLineNum = l:currLineNum
 
   " l:idxForCursor contains the array index (0-based) of the position of the
   " '$' in ${1:arg}, in the expanded snippet. l:placeHolderLength is the
@@ -987,6 +993,10 @@ function snipper#TriggerSnippet()
   " actions (e.g., clean the state variables, etc.).
   call snipper#SetTraps()
 
+  if len(s:groupedPassiveTabStopsList) > 0
+    au InsertEnter * call snipper#UpdateSnippet(1)
+  endif
+
   " The next two functions place the cursor at the first tabstop location
   " (remember that the "${1}" string is no longer there), and visually select
   " the placeholder, if any, and go to select mode. (If there is no
@@ -994,6 +1004,28 @@ function snipper#TriggerSnippet()
   " used to be.)
   call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
   return snipper#FigureOutWhatToReturn(l:placeHolderLength)
+endfunction
+
+function snipper#UpdateSnippet(tabStopNum)
+  let l:placeholderLen = s:tabStops[a:tabStopNum-1][2]
+  let l:key = s:groupedPassiveTabStopsList[a:tabStopNum-1][0]
+  let l:lineIdx = s:passiveTabStops[l:key][0]
+  let l:curIdx = s:passiveTabStops[l:key][1]
+  let l:lineNum = l:lineIdx + s:snippetInsertionLineNum
+  let l:lineOriginal = getline(l:lineNum)
+  call setline(l:lineNum, slice(l:lineOriginal, 0, s:snippetInsertionPos + l:curIdx - 1) .
+        \ slice(l:lineOriginal, s:snippetInsertionPos + l:curIdx + l:placeholderLen - 1))
+
+  " let l:linesDict = {} " line num => "modified line"
+  " for l:key in s:groupedPassiveTabStopsList[a:tabStopNum-1]
+  "   let l:lineIdx = s:passiveTabStops[l:key][0]
+  "   let l:lineNum = l:lineIdx + s:snippetInsertionLineNum
+  "   let l:prevLine = ""
+
+  "   if has_key(l:linesDict, l:lineNum)
+  "     let l:prevLine = l:linesDict[l:lineNum]
+  "   endif
+  " endfor
 endfunction
 
 " Brief: Takes care of updating state variables, except s:snippetInsertionPos,
