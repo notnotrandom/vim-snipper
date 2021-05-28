@@ -467,7 +467,6 @@ function snipper#ProcessSnippet(snip)
     " matchstrpos() function above will be '}'. Otherwise, it will be some
     " other char.
     if l:placeHolder[-1:] != '}' " There is a placeholder.
-      " XXX this is to remove... eventually.
       call add(l:placeHolders, l:placeHolder) " Eg: placeholder for ${1:arg} has index 0
 
       " Here we take the snippet and replace ${1:placeholder} with
@@ -498,7 +497,6 @@ function snipper#ProcessSnippet(snip)
       let l:placeHolderLength = strcharlen(l:placeHolder)
 
     else " There is no placeholder.
-      " XXX this is to remove... eventually.
       call add(l:placeHolders, "") " Eg: empty placeholder for ${1} has index 0
 
       " In the matchstrpos() used above, when there is no placeholder, that
@@ -827,14 +825,18 @@ function snipper#TriggerSnippet()
     " There is a ${s:nextTabStopNum} tabstop, so go process it. Control
     " arrives here because at ${s:nextTabStopNum - 1}, the user typed the
     " text he wanted, and then hit <Tab>. And that brought him to the
-    " current tabstop, viz. {s:nextTabStopNum}.
-    "   Start by obtaining the current line, and current cursor position.
-    " From both of those, compute the char length of the text the user
-    " entered, at the *previous* tabstop (${s:nextTabStopNum - 1}).
+    " current tabstop, viz., s:nextTabStopNum.
+    "   Start by clearing any autocmd's that might be set (the next tabstop
+    " might not need any autocmd's, and even it does, there are parameters
+    " that have to be reset before setting the autocmd's up again). Then,
+    " obtain the current line, and current cursor position. From both of
+    " those, compute the char length of the text the user entered, at the
+    " *previous* tabstop (${s:nextTabStopNum - 1}).
     "
     if exists("#vimSnipperAutocmds")
       autocmd! vimSnipperAutocmds
     endif
+
     let l:line = getline(".") " Current line.
     let l:lineNum = line(".") " Current line number.
     let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
@@ -853,9 +855,19 @@ function snipper#TriggerSnippet()
     " ${s:nextTabStopNum - 1}. For those, we need to keep the cursor char
     " index accurate, adding to it the difference between the length of the
     " user inserted text, and the length of the placeholder.
-    for idx in l:idxsToUpdate
-      let s:tabStops[idx][1] += (l:lengthOfUserText - l:placeHolderLength)
-    endfor
+    "   However, this is only done if there are no passive tabstops; otherwise
+    " updating the (regular) tabstops' position is done with the autocmd's.
+    " Also, if there existed passive tabstops for the previous (regular)
+    " tabstop, the autocmd's are cleared, for the processing of that tabstop
+    " is basically over.
+    if len(s:groupedPassiveTabStopsList) == 0
+      if exists("#vimSnipperAutocmds")
+        autocmd! vimSnipperAutocmds
+      endif
+      for idx in l:idxsToUpdate
+        let s:tabStops[idx][1] += (l:lengthOfUserText - l:placeHolderLength)
+      endfor
+    endif
 
     " At this point, processing ${s:nextTabStopNum - 1} is done. So we set
     " the traps for the processing of the current tabsop, ${s:nextTabStopNum}.
