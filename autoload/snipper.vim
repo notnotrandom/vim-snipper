@@ -194,6 +194,8 @@ function snipper#ClearState()
   " clears.
   sunmap <buffer> <BS>
 
+  autocmd! vimSnipperAutocmds
+
   if mode() == 's'
     return "\<Esc>"
   else
@@ -609,7 +611,6 @@ function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList
 
   let l:snippetLineList = a:snippetLineList
   for tsn in range(1, len(a:placeHoldersList))
-    call add(s:groupedPassiveTabStopsList, [])
 
     for idx in range(len(a:snippetLineList))
       let l:snippetCurrLineIdx = idx
@@ -648,6 +649,7 @@ function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList
 
         let s:passiveTabStops[nr2char(l:currKey)] =
               \ [ l:snippetCurrLineIdx, l:startCharIdx, [], [] ]
+        call add(s:groupedPassiveTabStopsList, [])
         call add(s:groupedPassiveTabStopsList[tsn - 1], nr2char(l:currKey))
 
         let l:currKey += 1
@@ -783,6 +785,7 @@ function snipper#TriggerSnippet()
     " From both of those, compute the char length of the text the user
     " entered, at the *previous* tabstop (${s:nextTabStopNum - 1}).
     "
+    autocmd! vimSnipperAutocmds
     let l:line = getline(".") " Current line.
     let l:lineNum = line(".") " Current line number.
     let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
@@ -994,7 +997,11 @@ function snipper#TriggerSnippet()
   call snipper#SetTraps()
 
   if len(s:groupedPassiveTabStopsList) > 0
-    au InsertEnter * call snipper#UpdateSnippet(1)
+		augroup vimSnipperAutocmds
+      autocmd!
+      autocmd InsertEnter * call snipper#RemovePlaceholders(1)
+      autocmd CursorMovedI * call snipper#UpdateSnippet(1)
+    augroup END
   endif
 
   " The next two functions place the cursor at the first tabstop location
@@ -1007,25 +1014,169 @@ function snipper#TriggerSnippet()
 endfunction
 
 function snipper#UpdateSnippet(tabStopNum)
+  " XXX check defined
+
+  let l:cursorLine = s:tabStops[a:tabStopNum - 1][0]
+  let l:cursorIdxRelToSnip = s:tabStops[a:tabStopNum - 1][1]
+
+  let l:line = getline(".")
+
+  " strgetchar() returns a decimal number for char, which nr2char() converts
+  " to a char proper.
+  let l:insertedChar = nr2char(strgetchar(l:line, charcol(".")-2))
+
+  let l:idxsPerLineDict = s:idxsForLineUpdateDuringInsert_d
+
+  for l:key in keys(l:idxsPerLineDict)
+    let l:lineNum = l:key + s:snippetInsertionLineNum
+    let l:lineOriginal = getline(l:lineNum)
+
+    let l:idxs = l:idxsPerLineDict[l:key]
+    let l:newLine = ""
+
+    let l:cutoff = -1 " index of first passive tabstop to the right of cursor
+    if l:key == l:cursorLine
+      for idx in range(len(l:idxs))
+        if l:idxs[idx] + 1 > s:snippetInsertionPos + l:cursorIdxRelToSnip
+          let l:cutoff = idx
+          break
+        endif
+      endfor
+      for idx in range(l:cutoff, len(l:idxs)-1) " Vim's range() is weird...
+        let l:idxs[idx] += 1
+      endfor
+    endif
+
+    let l:start = 0
+    echom "l:idxs: ". string(l:idxs)
+    echom "lin orig: ". l:lineOriginal
+    for idx in range(len(l:idxs))
+      " if l:key == l:cursorLine && l:idxs[idx] + 1 >
+      "       \ s:snippetInsertionPos + l:cursorIdxRelToSnip
+      "   let s:idxsForLineUpdateDuringInsert_d[l:key][idx] += 1
+      " endif
+
+      " Update tabstops to the right...
+      " for jdx in range(idx + 1, len(l:idxs)-1) " Vim's range() is weird...
+      "   let s:idxsForLineUpdateDuringInsert_d[l:key][jdx] += 1
+      " endfor
+
+      let l:end = s:snippetInsertionPos + l:idxs[idx] - 1 " idx is one minus col
+      let l:newLine = l:newLine . slice(l:lineOriginal, l:start, l:end) . l:insertedChar
+
+      let l:start = s:snippetInsertionPos + l:idxs[idx] - 1
+
+      let s:idxsForLineUpdateDuringInsert_d[l:key][idx] += 1
+
+    endfor
+    let l:newLine = l:newLine . slice(l:lineOriginal, l:start)
+
+    if l:key == l:cursorLine && l:cutoff != -1 && l:cutoff + 1 < len(l:idxs)
+      for idx in range(l:cutoff + 1, len(l:idxs)-1) " Vim's range() is weird...
+        let l:idxs[idx] += (idx - l:cutoff)
+      endfor
+    endif
+
+
+    " We have a finished new line; so added to the Dict of new lines to be
+    " inserted into the file.
+    call setline(l:lineNum, l:newLine)
+  endfor
+endfunction
+
+function snipper#RemovePlaceholders(tabStopNum)
+  let l:cursorLine = s:tabStops[a:tabStopNum - 1][0]
+  let l:cursorIdxRelToSnip = s:tabStops[a:tabStopNum - 1][1]
   let l:placeholderLen = s:tabStops[a:tabStopNum-1][2]
-  let l:key = s:groupedPassiveTabStopsList[a:tabStopNum-1][0]
-  let l:lineIdx = s:passiveTabStops[l:key][0]
-  let l:curIdx = s:passiveTabStops[l:key][1]
-  let l:lineNum = l:lineIdx + s:snippetInsertionLineNum
-  let l:lineOriginal = getline(l:lineNum)
-  call setline(l:lineNum, slice(l:lineOriginal, 0, s:snippetInsertionPos + l:curIdx - 1) .
-        \ slice(l:lineOriginal, s:snippetInsertionPos + l:curIdx + l:placeholderLen - 1))
 
-  " let l:linesDict = {} " line num => "modified line"
-  " for l:key in s:groupedPassiveTabStopsList[a:tabStopNum-1]
-  "   let l:lineIdx = s:passiveTabStops[l:key][0]
-  "   let l:lineNum = l:lineIdx + s:snippetInsertionLineNum
-  "   let l:prevLine = ""
+  " line idx => [idx1, idx2, etc] of passive tabstops in line "line number"
+  let l:idxsPerLineDict = {}
 
-  "   if has_key(l:linesDict, l:lineNum)
-  "     let l:prevLine = l:linesDict[l:lineNum]
-  "   endif
-  " endfor
+  " For each line, obtain their passive tabstops col idxs.
+  for l:key in s:groupedPassiveTabStopsList[a:tabStopNum-1]
+    let l:lineIdx = s:passiveTabStops[l:key][0]
+
+    if ! has_key(l:idxsPerLineDict, l:lineIdx)
+      let l:idxsPerLineDict[l:lineIdx] = [ s:passiveTabStops[l:key][1] ]
+    else
+      call add(l:idxsPerLineDict[l:lineIdx], s:passiveTabStops[l:key][1])
+    endif
+  endfor
+
+  for l:key in keys(l:idxsPerLineDict)
+    " NOTE: sort() should be done inplace! Also, sort() is ascending!
+    call sort(l:idxsPerLineDict[l:key])
+  endfor
+
+  for l:key in keys(l:idxsPerLineDict)
+    let l:lineNum = l:key + s:snippetInsertionLineNum
+    let l:lineOriginal = getline(l:lineNum)
+
+    let l:idxs = l:idxsPerLineDict[l:key]
+    let l:newLine = ""
+    " echom "l:idxs orig: ". string(l:idxs)
+    " echom "lin orig: ". l:lineOriginal
+
+    let l:cutoff = -1 " index of first passive tabstop to the right of cursor
+    if l:key == l:cursorLine
+      for idx in range(len(l:idxs))
+        if l:idxs[idx] + 1 > s:snippetInsertionPos + l:cursorIdxRelToSnip
+          let l:cutoff = idx
+          break
+        endif
+      endfor
+      for idx in range(l:cutoff, len(l:idxs)-1) " Vim's range() is weird...
+        let l:idxs[idx] -= l:placeholderLen
+      endfor
+    endif
+
+    " echom "idxs list: ". string(l:idxs)
+    let l:start = 0
+    for idx in range(len(l:idxs))
+      " echom "line num: ". l:key
+      " echom "cursor line: ". l:cursorLine
+      " echom "idxs ". l:idxs[idx]
+      " echom "snip ins pos ". s:snippetInsertionPos
+      " echom "cur idx ". l:cursorIdxRelToSnip
+      " echom "placeholder len". l:placeholderLen
+
+      " if l:key == l:cursorLine && l:idxs[idx] + 1 >
+      "       \ s:snippetInsertionPos + l:cursorIdxRelToSnip
+      "   let l:idxs[idx] -= l:placeholderLen
+      "   echom "foobar: ".l:idxs[idx]
+      "   for jdx in range(idx + 1, len(l:idxs)-1) " Vim's range() is weird...
+      "     let l:idxs[jdx] -= l:placeholderLen
+      "   endfor
+      " endif
+
+      let l:end = s:snippetInsertionPos + l:idxs[idx] - 1 " idx is one minus col
+      let l:newLine = l:newLine . slice(l:lineOriginal, l:start, l:end)
+
+      " Update tabstops to the right...
+      " for jdx in range(idx + 1, len(l:idxs)-1) " Vim's range() is weird...
+      "   let l:idxs[jdx] -= l:placeholderLen
+      " endfor
+
+      let l:start = s:snippetInsertionPos + l:idxs[idx] + l:placeholderLen - 1
+    endfor
+    let l:newLine = l:newLine . slice(l:lineOriginal, l:start)
+
+    if l:key == l:cursorLine && l:cutoff != -1 && l:cutoff + 1 < len(l:idxs)
+      for idx in range(l:cutoff + 1, len(l:idxs)-1) " Vim's range() is weird...
+        let l:idxs[idx] -= (idx - l:cutoff) * l:placeholderLen
+      endfor
+    endif
+
+    " echom "lin without placeholders: ". l:newLine
+    " echom "l:idxs: ". string(l:idxs)
+    let l:idxsPerLineDict[l:key] = l:idxs
+
+    " We have a finished new line; so added to the Dict of new lines to be
+    " inserted into the file.
+    call setline(l:lineNum, l:newLine)
+  endfor
+  let s:idxsForLineUpdateDuringInsert_d = copy(l:idxsPerLineDict)
+  " XXX state
 endfunction
 
 " Brief: Takes care of updating state variables, except s:snippetInsertionPos,
