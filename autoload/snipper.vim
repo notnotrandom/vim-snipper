@@ -77,11 +77,28 @@ let g:snipper#ProcessedSnippets = {}
 " sign. 
 let s:cursorStartPos = -1
 
+" List of Dicts. Index 0 contain a Dictionary { lineIdx => [ a, b, c] } for
+" tabstop ${1}. a, b, and c are all the passive tabstops that exists in the
+" snippet line with index lineIdx (so the first line is 0, 1 for the second
+" line, and so on). The passive tabstops are also sorted by ascending index of
+" appearance: in the above example, a appears to the left of b, and b in turn
+" appears to the left of c.
+"
+" Whether or not there are passive tabstops, this is contain an (possibly
+" empty) Dict for each regular tabstop (i.e. ${1}, ${2}, etc.).
 let s:groupedPassiveTabStopsList = []
 
 " Should be self-explanatory.
 let s:nextTabStopNum = 0
 
+" Dictionary, containing ALL the passive tabstops, numbered from a to z, by
+" order of appearance (left to right, top to bottom). These, letters from a to
+" z, are the keys of the hashtables. For each key, its value is an array,
+" containing, the same parameters as the elements of s:tabStops, except for
+" placeholder length. (So s:tabStops parameters with indexes 3 and 4, here are
+" 2 and 3 respectively.)
+"
+" If there are no passive tabstops, this is empty.
 let s:passiveTabStops = {}
 
 " Line number where the trigger was entered. It will contain the first line of
@@ -196,6 +213,10 @@ function snipper#ClearState()
   " clears.
   sunmap <buffer> <BS>
 
+  " Ordinarily, this clearing of autocmd's would not be needed here (it is
+  " dealt with in snipper#TriggerSnippet()). It is here for the case when the
+  " user halts the snippet insertion with <Esc> or <C-c>: in this scenario,
+  " there is no other place to clear them.
   if exists("#vimSnipperAutocmds")
     autocmd! vimSnipperAutocmds
   endif
@@ -242,6 +263,12 @@ function snipper#JumpToNextTabStop()
   if s:nextTabStopNum > len(s:tabStops)
     call snipper#ClearState()
     return ""
+  endif
+
+  " Otherwise, start by clearing autocmd's, if any. (In the above case this is
+  " done by ClearState().)
+  if exists("#vimSnipperAutocmds")
+    autocmd! vimSnipperAutocmds
   endif
 
   " Set up <Esc> and <C-c> maps, in case the user decides to terminate the
@@ -600,8 +627,6 @@ function snipper#ProcessSnippet(snip)
     endfor
   endfor
 
-  " echom "line about to go passive processing: " 
-  " echom string(l:snippetLineList)
   return snipper#ProcessSnippetPassiveTabStops(l:snippetLineList, l:placeHolders)
 endfunction
 
@@ -615,6 +640,12 @@ function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList
 
   let l:snippetLineList = a:snippetLineList
   for tsn in range(1, len(a:placeHoldersList))
+    " if len(s:groupedPassiveTabStopsList) < tsn
+    "   " This condition holds when there no element corresponding to the
+    "   " current tabstop.
+    "   call add(s:groupedPassiveTabStopsList, {})
+    " endif
+    call add(s:groupedPassiveTabStopsList, {})
 
     for idx in range(len(a:snippetLineList))
       let l:snippetCurrLineIdx = idx
@@ -637,15 +668,12 @@ function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList
 
         let l:placeHolder = a:placeHoldersList[tsn-1]
         let l:placeHolderLength = s:tabStops[tsn-1][2]
-        " echom "ph len: " . l:placeHolderLength
         let l:startCharIdx = charidx(l:line, l:startIdx) " Start char idx for curr tabstop.
         let l:endCharIdx = charidx(l:line, l:endIdx)
 
         " Replace $1 or whatever with its placeholder (i.e., ${1:placeholder}).
-        " echom "line orig: " . l:line
         let l:line = strcharpart(l:line, 0, l:startCharIdx)
               \ . l:placeHolder . strcharpart(l:line, l:endCharIdx)
-        " echom "line replaced: " . l:line
 
         " Update previous passive tabstops, in the same line, to the right of
         " the current one.
@@ -669,11 +697,6 @@ function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList
         " s:groupedPassiveTabStopsList is a list of Dicts. Each dict is like
         " { lineIdx => [ a,b,c ] }, where a, b, c, are the passive tabstops
         " that exist in line with offset lineIdx.
-        if len(s:groupedPassiveTabStopsList) < tsn
-          " This condition holds when there no element corresponding to the
-          " current tabstop.
-          call add(s:groupedPassiveTabStopsList, {})
-        endif
         if has_key(s:groupedPassiveTabStopsList[tsn - 1], l:snippetCurrLineIdx)
           call add(s:groupedPassiveTabStopsList[tsn - 1][l:snippetCurrLineIdx],
                 \ nr2char(l:currKey))
@@ -743,9 +766,71 @@ function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList
     endfor
   endfor
 
-  " echom "wtf: ".l:snippetLineList[0]
   let l:snippet = join(l:snippetLineList, "\n")
   return l:snippet
+endfunction
+
+" If the user presses <Tab>, this function is called with the placeholder for
+" a:tabStopNum inplace. Otherwise, it is called with that placeholder
+" *removed*.
+" To discover which scenario we are in, we use the
+" s:lenghtOfLineWhereCursorWent variable (hack...)...
+function snipper#RemovePlaceholders(tabStopNum)
+  if s:lenghtOfLineWhereCursorWent == len(getline(s:snippetInsertionLineNum))
+    echomsg "User pressed <Tab>, so nothing to do here..."
+    return
+  endif
+
+  " This is not a part of the state. It is just to keep tabs on the cursor
+  " position, so as to be able to detect, in function snipper#UpdateSnippet(),
+  " if the user has pressed backspace (<BS>).
+  let s:curCol = charcol(".")
+
+  let l:placeholderLen = s:tabStops[a:tabStopNum-1][2]
+
+  " Update passive deps of current tabstop.
+  for elem in s:tabStops[a:tabStopNum - 1][4]
+    let s:passiveTabStops[elem][1] -= l:placeholderLen
+  endfor
+
+  " Update active deps of current tabstop.
+  for elem in s:tabStops[a:tabStopNum - 1][3]
+    let s:tabStops[elem][1] -= l:placeholderLen
+  endfor
+
+  for l:key in keys(s:groupedPassiveTabStopsList[a:tabStopNum - 1])
+    let l:lineNum = l:key + s:snippetInsertionLineNum
+    let l:lineOriginal = getline(l:lineNum)
+
+    " Names of passive TS, e.g., a, b, etc., already sorted (ascending).
+    let l:pTabStopsInCurrLine_l =
+          \ s:groupedPassiveTabStopsList[a:tabStopNum - 1][l:key]
+    let l:newLine = l:lineOriginal
+
+    " let l:start = 0
+    for idx in range(len(l:pTabStopsInCurrLine_l))
+
+      let l:idxOfCurrPassiveTS =
+            \ s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1]
+
+      let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1) .
+            \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS + l:placeholderLen - 1)
+
+      " Update passive deps of the passive tabstop we just got rid of.
+      for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][3]
+        let s:passiveTabStops[elem][1] -= l:placeholderLen
+      endfor
+
+      " Update active deps of the passive tabstop we just got rid of.
+      for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][2]
+        let s:tabStops[elem][1] -= l:placeholderLen
+      endfor
+    endfor
+
+    " We have a finished new line; so added to the Dict of new lines to be
+    " inserted into the file.
+    call setline(l:lineNum, l:newLine)
+  endfor
 endfunction
 
 " NOTA BENE: this function requires the value of s:cursorStartPos and
@@ -790,6 +875,12 @@ function snipper#SetTraps()
   snoremap <buffer> <BS> <BS>i
 endfunction
 
+" Brief: This function is basically divided into two parts. As it is called
+" when the <Tab> key is pressed in Insert mode (i.e., after the user has typed
+" or deleted something), it detects wether what the user typed is a trigger
+" for a snippet, or a tabstop for a snippet currently being processed. The
+" upper part of the function deals with the latter case; the lower, with the
+" former.
 function snipper#TriggerSnippet()
   if len(g:snipper#snippets) == 0 ||
         \ ( &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:false )
@@ -815,6 +906,7 @@ function snipper#TriggerSnippet()
     " s:nextTabStopNum.
     "   [len(s:tabStops) is the number (1-based) of the last tabstop in the
     " current snippet.]
+
     if s:nextTabStopNum > len(s:tabStops)
       " There is no ${s:nextTabStopNum} tabstop, so just (clear the state and)
       " return <Tab> (the user did press the <Tab> key, after all).
@@ -855,23 +947,26 @@ function snipper#TriggerSnippet()
     " ${s:nextTabStopNum - 1}. For those, we need to keep the cursor char
     " index accurate, adding to it the difference between the length of the
     " user inserted text, and the length of the placeholder.
-    "   However, this is only done if there are no passive tabstops; otherwise
-    " updating the (regular) tabstops' position is done with the autocmd's.
-    " Also, if there existed passive tabstops for the previous (regular)
-    " tabstop, the autocmd's are cleared, for the processing of that tabstop
-    " is basically over.
-    if len(s:groupedPassiveTabStopsList) == 0
-      if exists("#vimSnipperAutocmds")
-        autocmd! vimSnipperAutocmds
-      endif
+    "   However, this is only done if there are no passive tabstops, FOR THE
+    " ENTIRE SNIPPET; otherwise updating the (regular) tabstops' position is
+    " done with the autocmd functions. Also, if there existed passive tabstops
+    " for the previous (regular) tabstop, the autocmd's are cleared, as the
+    " processing of that tabstop is basically over.
+    if len(s:passiveTabStops) == 0
       for idx in l:idxsToUpdate
         let s:tabStops[idx][1] += (l:lengthOfUserText - l:placeHolderLength)
       endfor
+    else
+      " There are passive tabstops in the current snippet. So setup the
+      " autocmd's.
+      if len(s:groupedPassiveTabStopsList[s:nextTabStopNum - 1]) > 0
+        augroup vimSnipperAutocmds
+          autocmd!
+          autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum)
+          autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum)
+        augroup END
+      endif
     endif
-
-    " At this point, processing ${s:nextTabStopNum - 1} is done. So we set
-    " the traps for the processing of the current tabsop, ${s:nextTabStopNum}.
-    call snipper#SetTraps()
 
     " (cont.) And retrieve the information about ${s:nextTabStopNum} (which
     " has index s:nextTabStopNum - 1).
@@ -883,12 +978,17 @@ function snipper#TriggerSnippet()
     " call snipper#UpdateState(l:snippet, l:idxForCursor)
     call snipper#UpdateState(l:idxForLine, l:idxForCursor)
 
+    " At this point, processing ${s:nextTabStopNum - 1} is done. So we set
+    " the traps for the processing of the current tabsop, ${s:nextTabStopNum}.
+    call snipper#SetTraps()
+
     call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
     return snipper#FigureOutWhatToReturn(l:placeHolderLength)
   endif
 
   " If control reaches here, it means the user just entered a trigger and hit
-  " <Tab>. So let us see if there is anything to process.
+  " <Tab>. So let us see if there is anything to process, or if we just have
+  " to return a <Tab>.
 
   let l:line = getline(".") " Current line.
   let l:currLineNum = line(".")
@@ -965,6 +1065,10 @@ function snipper#TriggerSnippet()
     " We have seen this snippet before, so retrieve the needed information.
     let l:triggerExpansion = g:snipper#ProcessedSnippets[l:key][l:trigger]['snippet']
     let s:tabStops = deepcopy(g:snipper#ProcessedSnippets[l:key][l:trigger]['tabstops'])
+    let s:passiveTabStops =
+          \ deepcopy(g:snipper#ProcessedSnippets[l:key][l:trigger]['passiveTS'])
+    let s:groupedPassiveTabStopsList =
+          \ deepcopy(g:snipper#ProcessedSnippets[l:key][l:trigger]['groupedPassiveTS'])
   else
     " We have NOT seen this snippet before, so on we go with processing it.
     " The snipper#ProcessSnippet() function will set the s:tabStops
@@ -980,7 +1084,10 @@ function snipper#TriggerSnippet()
     endif
     " Then store the processing information.
     let g:snipper#ProcessedSnippets[l:key][l:trigger] =
-          \ { 'snippet': l:triggerExpansion, 'tabstops': deepcopy(s:tabStops) }
+          \ { 'snippet': l:triggerExpansion,
+          \ 'tabstops': deepcopy(s:tabStops),
+          \ 'passiveTS': deepcopy(s:passiveTabStops),
+          \ 'groupedPassiveTS': deepcopy(s:groupedPassiveTabStopsList)}
   endif " Check g:snipper#ProcessedSnippets[ftype|global] dict for key l:trigger.
 
   let l:triggerProcessedList = split(l:triggerExpansion, "\n", 1)
@@ -1057,7 +1164,9 @@ function snipper#TriggerSnippet()
   " actions (e.g., clean the state variables, etc.).
   call snipper#SetTraps()
 
-  if len(s:groupedPassiveTabStopsList) > 0
+  if len(s:groupedPassiveTabStopsList[0]) > 0
+    " If control reaches here, then at least tabstop ${1} exists; hence
+    " s:groupedPassiveTabStopsList has an least one element (an hash table).
 		augroup vimSnipperAutocmds
       autocmd!
       autocmd InsertEnter * call snipper#RemovePlaceholders(1)
@@ -1075,31 +1184,34 @@ function snipper#TriggerSnippet()
 endfunction
 
 function snipper#UpdateSnippet(tabStopNum)
-  " XXX check defined
-
-  echom "upd snip orig line: (" . a:tabStopNum . ") and length"
-  echom getline(s:snippetInsertionLineNum)
-  echom "start ts2 idx: ". string(s:tabStops[1])
-
-  " strgetchar() returns a decimal number for char, which nr2char() converts
-  " to a char proper.
+  let l:charShift = 1
+  let l:curCol = charcol(".")
+  let l:insertedChar = ""
+  let l:insertedCharIsBackspace = v:false
   let l:line = getline(".")
-  let l:insertedChar = nr2char(strgetchar(l:line, charcol(".")-2))
+
+  if l:curCol == s:curCol - 1
+    let l:insertedCharIsBackspace = v:true
+    let l:charShift = -1
+  else
+    " strgetchar() returns a decimal number for char, which nr2char() converts
+    " to a char proper.
+    let l:insertedChar = nr2char(strgetchar(l:line, l:curCol-2))
+  endif
+  let s:curCol = l:curCol
 
   " for cycling back, maybe?
-  let s:tabStops[a:tabStopNum - 1][1] += 1
+  " let s:tabStops[a:tabStopNum - 1][1] += 1
 
   " Update passive deps of current tabstop.
   for elem in s:tabStops[a:tabStopNum - 1][4]
-    " echom "foudasse: " . s:passiveTabStops[elem][1]
-    let s:passiveTabStops[elem][1] += 1
+    let s:passiveTabStops[elem][1] += l:charShift
   endfor
 
   " Update active deps of current tabstop.
   for elem in s:tabStops[a:tabStopNum - 1][3]
-    let s:tabStops[elem][1] += 1
+    let s:tabStops[elem][1] += l:charShift
   endfor
-  " echom "middle ts2 idx: ". s:tabStops[1][1]
 
   for l:key in keys(s:groupedPassiveTabStopsList[a:tabStopNum - 1])
     let l:lineNum = l:key + s:snippetInsertionLineNum
@@ -1110,125 +1222,37 @@ function snipper#UpdateSnippet(tabStopNum)
           \ s:groupedPassiveTabStopsList[a:tabStopNum - 1][l:key]
     let l:newLine = l:lineOriginal
 
-    " let l:start = 0
     for idx in range(len(l:pTabStopsInCurrLine_l))
 
       let l:idxOfCurrPassiveTS =
             \ s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1]
-      " echom "pos...: ".(s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1)
 
-      let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1) .
-            \ l:insertedChar .
-            \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1)
+      if l:insertedCharIsBackspace == v:false
+        let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1) .
+              \ l:insertedChar .
+              \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1)
+      else " User entered <BS>.
+        let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 2) .
+              \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1)
+      endif
 
-      " echom "sdfasdf: ".l:newLine
-
-      " let l:idxOfCurrPassiveTS += 1
-      let s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1] += 1
+      let s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1] += l:charShift
 
       " Update passive deps of the passive tabstop we just added a char to.
       for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][3]
-        let s:passiveTabStops[elem][1] += 1
+        let s:passiveTabStops[elem][1] += l:charShift
       endfor
 
       " Update active deps of the passive tabstop we just added a char to.
       for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][2]
-        let s:tabStops[elem][1] += 1
+        let s:tabStops[elem][1] += l:charShift
       endfor
     endfor
-
-    " " Update passive deps of current tabstop.
-    " for elem in s:tabStops[a:tabStopNum - 1][4]
-    "   " echom "foudasse: " . s:passiveTabStops[elem][1]
-    "   let s:passiveTabStops[elem][1] += 1
-    " endfor
 
     " We have a finished new line; so added to the Dict of new lines to be
     " inserted into the file.
     call setline(l:lineNum, l:newLine)
   endfor
-
-  " let s:cursorStartPos += 1
-  echom "foooo:" . s:cursorStartPos
-
-  echom "upd snip final line: "
-  echom getline(s:snippetInsertionLineNum)
-  echom "end ts2 idx: ". string(s:tabStops[1])
-endfunction
-
-" If the user presses <Tab>, this function is called with the placeholder for
-" a:tabStopNum inplace. Otherwise, it is called with that placeholder
-" *removed*.
-" To discover which scenario we are in, we use the
-" s:lenghtOfLineWhereCursorWent variable (hack...)...
-function snipper#RemovePlaceholders(tabStopNum)
-  if s:lenghtOfLineWhereCursorWent == len(getline(s:snippetInsertionLineNum))
-    echom "User pressed <Tab>, so nothing to do here..."
-    return
-  endif
-
-  " echom "start ts2 col: ". s:tabStops[1][1]
-  " echom getline(s:snippetInsertionLineNum)
-  let l:placeholderLen = s:tabStops[a:tabStopNum-1][2]
-
-  " Update passive deps of current tabstop.
-  for elem in s:tabStops[a:tabStopNum - 1][4]
-    let s:passiveTabStops[elem][1] -= l:placeholderLen
-  endfor
-
-  " Update active deps of current tabstop.
-  for elem in s:tabStops[a:tabStopNum - 1][3]
-    let s:tabStops[elem][1] -= l:placeholderLen
-  endfor
-  " echom "rem placeh orig line: (" . a:tabStopNum . ") and length"
-  " echom s:passiveTabStops
-
-  for l:key in keys(s:groupedPassiveTabStopsList[a:tabStopNum - 1])
-    let l:lineNum = l:key + s:snippetInsertionLineNum
-    let l:lineOriginal = getline(l:lineNum)
-
-    " Names of passive TS, e.g., a, b, etc., already sorted (ascending).
-    let l:pTabStopsInCurrLine_l =
-          \ s:groupedPassiveTabStopsList[a:tabStopNum - 1][l:key]
-    let l:newLine = l:lineOriginal
-
-    " let l:start = 0
-    for idx in range(len(l:pTabStopsInCurrLine_l))
-
-      let l:idxOfCurrPassiveTS =
-            \ s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1]
-      " echom l:idxOfCurrPassiveTS
-      " let l:end = s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1 " idx is one minus col
-
-      let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1) .
-            \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS + l:placeholderLen - 1)
-
-
-      " let l:start = s:snippetInsertionPos + l:idxOfCurrPassiveTS + l:placeholderLen - 1
-
-      " Update passive deps of the passive tabstop we just got rid of.
-      for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][3]
-        let s:passiveTabStops[elem][1] -= l:placeholderLen
-      endfor
-
-      " Update active deps of the passive tabstop we just got rid of.
-      for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][2]
-        let s:tabStops[elem][1] -= l:placeholderLen
-      endfor
-
-    endfor
-    " let l:newLine = l:newLine . slice(l:lineOriginal, l:start)
-
-    " We have a finished new line; so added to the Dict of new lines to be
-    " inserted into the file.
-    call setline(l:lineNum, l:newLine)
-  endfor
-
-  " XXX state
-  " echom "rem placeh final line: "
-  " echom getline(s:snippetInsertionLineNum)
-  " echom s:passiveTabStops
-  " echom "end ts2 col: ". s:tabStops[1][1]
 endfunction
 
 " Brief: Takes care of updating state variables, except s:snippetInsertionPos,
