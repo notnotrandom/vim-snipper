@@ -860,19 +860,30 @@ endfunction
 " hitting either <Esc>, or <Ctrl-c>. This function captures that event, and
 " call snipper#ClearState(), to remove state information. This clears the way
 " for a new snippet expansion to be processed.
-function snipper#SetTraps()
+" Parameter: placeHolderEndsLine. Should be 1 if the placeholder for the
+" current tabstop is the last text on the line. 0 otherwise (the default).
+function snipper#SetTraps(placeHolderEndsLine = 0)
   inoremap <buffer><expr> <Esc> snipper#ClearState()
   inoremap <buffer><expr> <C-c> snipper#ClearState()
   snoremap <buffer><expr> <Esc> snipper#ClearState()
   snoremap <buffer><expr> <C-c> snipper#ClearState()
 
-  " This map is here because if the user, having a visually selected
+  " This <BS> map is here because if the user, having a visually selected
   " placeholder (select mode), hits backspace, the placeholder text is
   " deleted, *but the user is left in normal mode*. To fix this, i.e. to allow
   " the user to continue either inserting text, or jumping to the next
   " tabstop, I remap the backspace key to do backspace, and then go to insert
   " mode.
-  snoremap <buffer> <BS> <BS>i
+  if a:placeHolderEndsLine == 1
+    " If the placeholder ends the line, and the user hits <BS> in select mode,
+    " then the cursor will left over the *previous* character -- so we need to
+    " hit (a)ppend.
+    snoremap <buffer> <BS> <BS>a
+  else
+    " Otherwise, the cursor will be left over the *next* character, so we hit
+    " (i)nsert.
+    snoremap <buffer> <BS> <BS>i
+  endif
 endfunction
 
 " Brief: This function is basically divided into two parts. As it is called
@@ -1162,7 +1173,23 @@ function snipper#TriggerSnippet()
 
   " Set the mappings to catch <Esc>, or <Ctrl-c>, and do the necessary cleanup
   " actions (e.g., clean the state variables, etc.).
-  call snipper#SetTraps()
+
+  " Get line where the placeholder for ${1} was inserted.
+  let l:line = getline(s:snippetInsertionLineNum + l:idxForLine)
+
+  " The below if-cond checks if the placeholder is the last (rightmost) text
+  " of the line. To see why it is computed like this, imagine a line "abc",
+  " where "bc" is the placeholder.
+  "   (Recall that s:snippetInsertionPos + l:idxForCursor yields the COLUMN of
+  " the first placeholder char.) So the "b" is at col 2, and the placeholder
+  " has length 2, and 2+2 = 4 = 3 + 1, where 3 is the length of the line, with
+  " the placeholder in place.
+  if s:snippetInsertionPos + l:idxForCursor + l:placeHolderLength
+        \ == strcharlen(l:line) + 1
+    call snipper#SetTraps(1) " Placeholder ends the line.
+  else
+    call snipper#SetTraps()
+  endif
 
   if len(s:groupedPassiveTabStopsList[0]) > 0
     " If control reaches here, then at least tabstop ${1} exists; hence
