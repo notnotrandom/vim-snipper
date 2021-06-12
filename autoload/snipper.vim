@@ -862,11 +862,42 @@ endfunction
 " for a new snippet expansion to be processed.
 " Parameter: placeHolderEndsLine. Should be 1 if the placeholder for the
 " current tabstop is the last text on the line. 0 otherwise (the default).
-function snipper#SetTraps(placeHolderEndsLine = 0)
+function snipper#SetTraps()
   inoremap <buffer><expr> <Esc> snipper#ClearState()
   inoremap <buffer><expr> <C-c> snipper#ClearState()
   snoremap <buffer><expr> <Esc> snipper#ClearState()
   snoremap <buffer><expr> <C-c> snipper#ClearState()
+
+  if len(s:tabStops) == 0
+    return
+  endif
+
+  " There is at least one tabstop...
+  let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
+        \ = s:tabStops[0]
+  let l:placeHolderEndsLine_b = v:false
+
+  echom s:tabStops
+  echom s:nextTabStopNum
+  if s:nextTabStopNum >= 2
+    let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
+          \ = s:tabStops[s:nextTabStopNum - 1] " index one less than trigger number!
+  endif
+
+  " Get line where the placeholder for the current tabstop was inserted.
+  let l:line = getline(s:snippetInsertionLineNum + l:idxForLine)
+
+  " The below if-cond checks if the placeholder is the last (rightmost) text
+  " of the line. To see why it is computed like this, imagine a line "abc",
+  " where "bc" is the placeholder.
+  "   (Recall that s:snippetInsertionPos + l:idxForCursor yields the COLUMN of
+  " the first placeholder char.) So the "b" is at col 2, and the placeholder
+  " has length 2, and 2+2 = 4 = 3 + 1, where 3 is the length of the line, with
+  " the placeholder in place.
+  if s:snippetInsertionPos + l:idxForCursor + l:placeHolderLength
+        \ == strcharlen(l:line) + 1
+    let l:placeHolderEndsLine_b = v:true
+  endif
 
   " This <BS> map is here because if the user, having a visually selected
   " placeholder (select mode), hits backspace, the placeholder text is
@@ -874,7 +905,7 @@ function snipper#SetTraps(placeHolderEndsLine = 0)
   " the user to continue either inserting text, or jumping to the next
   " tabstop, I remap the backspace key to do backspace, and then go to insert
   " mode.
-  if a:placeHolderEndsLine == 1
+  if l:placeHolderEndsLine_b == v:true
     " If the placeholder ends the line, and the user hits <BS> in select mode,
     " then the cursor will left over the *previous* character -- so we need to
     " hit (a)ppend.
@@ -984,14 +1015,13 @@ function snipper#TriggerSnippet()
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[s:nextTabStopNum - 1]
 
-    " NOTA BENE: function snipper#UpdateState() increaments
-    " s:nextTabStopNum, which is a part of the state that needs to be kept.
-    " call snipper#UpdateState(l:snippet, l:idxForCursor)
-    call snipper#UpdateState(l:idxForLine, l:idxForCursor)
-
     " At this point, processing ${s:nextTabStopNum - 1} is done. So we set
     " the traps for the processing of the current tabsop, ${s:nextTabStopNum}.
     call snipper#SetTraps()
+
+    " NOTA BENE: function snipper#UpdateState() increaments
+    " s:nextTabStopNum, which is a part of the state that needs to be kept.
+    call snipper#UpdateState(l:idxForLine, l:idxForCursor)
 
     call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
     return snipper#FigureOutWhatToReturn(l:placeHolderLength)
@@ -1165,31 +1195,14 @@ function snipper#TriggerSnippet()
   let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
         \ = s:tabStops[0] " index one less than trigger number!
 
-  " The s:snippetInsertionPos is only set once: after all, the snippet is only
-  " inserted at one point. The remaining state information is set in the
-  " UpdateState() function. call snipper#UpdateState(l:snip, l:idxForLine,
-  " l:idxForCursor)
-  call snipper#UpdateState(l:idxForLine, l:idxForCursor)
-
   " Set the mappings to catch <Esc>, or <Ctrl-c>, and do the necessary cleanup
   " actions (e.g., clean the state variables, etc.).
+  call snipper#SetTraps()
 
-  " Get line where the placeholder for ${1} was inserted.
-  let l:line = getline(s:snippetInsertionLineNum + l:idxForLine)
-
-  " The below if-cond checks if the placeholder is the last (rightmost) text
-  " of the line. To see why it is computed like this, imagine a line "abc",
-  " where "bc" is the placeholder.
-  "   (Recall that s:snippetInsertionPos + l:idxForCursor yields the COLUMN of
-  " the first placeholder char.) So the "b" is at col 2, and the placeholder
-  " has length 2, and 2+2 = 4 = 3 + 1, where 3 is the length of the line, with
-  " the placeholder in place.
-  if s:snippetInsertionPos + l:idxForCursor + l:placeHolderLength
-        \ == strcharlen(l:line) + 1
-    call snipper#SetTraps(1) " Placeholder ends the line.
-  else
-    call snipper#SetTraps()
-  endif
+  " The s:snippetInsertionPos is only set once: after all, the snippet is only
+  " inserted at one point. The remaining state information is set in the
+  " UpdateState() function.
+  call snipper#UpdateState(l:idxForLine, l:idxForCursor)
 
   if len(s:groupedPassiveTabStopsList[0]) > 0
     " If control reaches here, then at least tabstop ${1} exists; hence
