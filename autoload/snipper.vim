@@ -868,17 +868,20 @@ function snipper#SetTraps()
   snoremap <buffer><expr> <Esc> snipper#ClearState()
   snoremap <buffer><expr> <C-c> snipper#ClearState()
 
+  " Hereinafter, the only thing that is left to do, is map the <BS> in select
+  " mode, in case an user decides delete the placeholder text. But this is
+  " only needed if there are tabstops -- if not, we are done.
   if len(s:tabStops) == 0
     return
   endif
 
-  " There is at least one tabstop...
+  " If there is at least one tabstop, untupple the list here, to initialise
+  " the variables.
   let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
         \ = s:tabStops[0]
   let l:placeHolderEndsLine_b = v:false
 
-  echom s:tabStops
-  echom s:nextTabStopNum
+  " s:nextTabStopNum goes from 0 to 2.
   if s:nextTabStopNum >= 2
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
           \ = s:tabStops[s:nextTabStopNum - 1] " index one less than trigger number!
