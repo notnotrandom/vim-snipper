@@ -907,7 +907,8 @@ function snipper#SetTraps()
   " deleted, *but the user is left in normal mode*. To fix this, i.e. to allow
   " the user to continue either inserting text, or jumping to the next
   " tabstop, I remap the backspace key to do backspace, and then go to insert
-  " mode.
+  " mode, either with (i)nsert or (a)ppend, depending on whether or not the
+  " placeholder ends the line.
   if l:placeHolderEndsLine_b == v:true
     " If the placeholder ends the line, and the user hits <BS> in select mode,
     " then the cursor will left over the *previous* character -- so we need to
