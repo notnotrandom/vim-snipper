@@ -325,7 +325,7 @@ function snipper#ParseSnippetFile(snipFile, filetype)
       " found that trigger before. If so, throw up error, has multiple snips
       " are not supported.
       if has_key(g:snipper#snippets[a:filetype], l:aux) == v:true
-        throw "DuplicateSnippetKeyFound"
+        throw "DuplicateSnippetKeyFound: " . l:aux
         return
       endif
 
