@@ -954,10 +954,13 @@ function snipper#TriggerSnippet()
     " current snippet.]
 
     if s:nextTabStopNum > len(s:tabStops)
-      " There is no ${s:nextTabStopNum} tabstop, so just (clear the state and)
-      " return <Tab> (the user did press the <Tab> key, after all).
+      " There is no ${s:nextTabStopNum} tabstop, so first, clear the state.
+      " And next, call snipper#TriggerSnippet() again, to check if the user
+      " wants to expand another snippet trigger.
+      "   We then return the result of that trigger check.
       call snipper#ClearState()
-      return "\<Tab>"
+      let l:ret = snipper#TriggerSnippet()
+      return l:ret
     endif
 
     " There is a ${s:nextTabStopNum} tabstop, so go process it. Control
