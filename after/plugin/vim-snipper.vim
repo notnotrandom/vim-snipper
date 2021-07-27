@@ -74,3 +74,5 @@ inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
 " cursor right after the placeholder text, as if the user had typed it
 " himself.
 snoremap <silent> <Tab> va<C-r>=snipper#JumpToNextTabStop()<CR>
+
+nnoremap <silent> <C-s> :call snipper#SearchForTrigger()<CR>

@@ -71,6 +71,10 @@ let g:snipper#snippets_dir = fnameescape(expand(g:snipper_config.snippet_locatio
 " trigger. See documentation of s:tabStops for more information.
 let g:snipper#ProcessedSnippets = {}
 
+" For the trigger search functionality.
+let s:filetype = &filetype
+let s:triggerList = []
+
 " --- Variables for processing tabstops. ---
 
 " For the tabstop currently being processed, the column position of the '$'
@@ -134,6 +138,8 @@ let s:tabStops = []
 
 " --- End of variables for processing tabstops. ---
 
+" This function is called, inter alia, when changing (e.g., :edit'ing) to a
+" file with a different filetype.
 function snipper#BuildSnippetDict()
   " First, check if we have read global snippets. If we haven't, then, parse
   " them now.
@@ -150,7 +156,31 @@ function snipper#BuildSnippetDict()
         \ filereadable(g:snipper#snippets_dir . "/" . &filetype . ".snippets")
     call snipper#ParseSnippetFile(
           \ g:snipper#snippets_dir . "/" . &filetype . ".snippets", &filetype)
+
   endif
+endfunction
+
+function snipper#checkNeedToBuildSnippetDict()
+  if len(g:snipper#snippets) == 0 ||
+        \ ( &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:false )
+    try
+      call snipper#BuildSnippetDict()
+      return v:true
+    catch /^DuplicateSnippetKeyFound$/
+      echoerr "Duplicate snippet key found!"
+    catch /^EmptyLineOnSnippetFile$/
+      echoerr "Empty lines not allowed in snippet files!"
+    catch /^FoundTriggerWithoutExpansion$/
+      echoerr "Found trigger without expansion!"
+    catch /^InvalidLineFound$/
+      echoerr "Invalid snippet line found!"
+    catch /^RepeatedParsingOfFiletype$/
+      echoerr "Repeated parsing of same file type!"
+    endtry
+    return v:false
+  endif
+
+  return v:true
 endfunction
 
 " Brief: If the current file has no file type set, then any trigger for it
@@ -833,6 +863,36 @@ function snipper#RemovePlaceholders(tabStopNum)
   endfor
 endfunction
 
+" Brief: Asks the user for a string, and then searches the list of triggers,
+" both for the current filetype, and global triggers, for those that match
+" that string.
+function snipper#SearchForTrigger()
+  if snipper#checkNeedToBuildSnippetDict() == v:false
+    return ""
+  endif
+
+  " The list of triggers need to be (re-) constructed if, either it hasn't
+  " been constructed for the first time yet, or if the filetype changed.
+  if s:triggerList == [] || &filetype != s:filetype
+
+    " Store the filetype for which we are building the list.
+    let s:filetype = &filetype
+
+    let s:triggerList = keys(g:snipper#snippets[s:global_key])
+    if &filetype != ""
+      let s:triggerList = s:triggerList + keys(g:snipper#snippets[&filetype])
+    endif
+  endif
+
+  let l:str = input('Enter string: ')
+
+  " Return the (sorted, ignoring case) list of triggers that contain the user
+  " supplied string.
+  let l:res = filter(copy(s:triggerList), 'v:val =~? "' . l:str . '"')
+  echo "\nTriggers: " . join(sort(l:res, 'i'), ', ')
+  return ""
+endfunction
+
 " NOTA BENE: this function requires the value of s:cursorStartPos and
 " s:snippetLineIdx for the current snippet!!! I.e., UpdateState() must be
 " called before calling this function!
@@ -928,21 +988,9 @@ endfunction
 " upper part of the function deals with the latter case; the lower, with the
 " former.
 function snipper#TriggerSnippet()
-  if len(g:snipper#snippets) == 0 ||
-        \ ( &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:false )
-    try
-      call snipper#BuildSnippetDict()
-    catch /^DuplicateSnippetKeyFound$/
-      echoerr "Duplicate snippet key found!"
-    catch /^EmptyLineOnSnippetFile$/
-      echoerr "Empty lines not allowed in snippet files!"
-    catch /^FoundTriggerWithoutExpansion$/
-      echoerr "Found trigger without expansion!"
-    catch /^InvalidLineFound$/
-      echoerr "Invalid snippet line found!"
-    catch /^RepeatedParsingOfFiletype$/
-      echoerr "Repeated parsing of same file type!"
-    endtry
+
+  if snipper#checkNeedToBuildSnippetDict() == v:false
+    return ""
   endif
 
   if s:nextTabStopNum != 0
