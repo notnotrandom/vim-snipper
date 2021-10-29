@@ -1099,7 +1099,7 @@ function snipper#TriggerSnippet()
   let l:col = col(".")
   let l:charCol = charcol(".")
 
-  if l:col == 1 || l:line[l:col - 2] =~ '\m\W'
+  if l:col == 1 || l:line[l:col - 2] =~ '\m\s'
     " If we are on column 1, or if the char in the column immediately before
     " the cursor is non-alphanumeric, then there is no snippet to expand. So
     " just return an actual <Tab> character.
@@ -1113,14 +1113,14 @@ function snipper#TriggerSnippet()
   let l:triggerEndCharIdx = l:col - 2
   let l:prevCharIdx = l:triggerEndCharIdx
 
-  while l:prevCharIdx >= 1 && l:line[l:prevCharIdx - 1] =~ '\m\w'
+  while l:prevCharIdx >= 1 && l:line[l:prevCharIdx - 1] =~ '\m\S'
     let l:prevCharIdx -= 1
   endwhile
 
   " Now, after the above while loop, l:prevCharIdx contain the array idx of
   " the first character of the trigger word.
 
-  " NOTA BENE: trigger must be ALPHANUMERIC only!
+  " NOTA BENE: trigger must be ASCII only!
   let l:triggerLength = l:triggerEndCharIdx - l:prevCharIdx + 1
   let l:trigger = strpart(l:line, l:prevCharIdx, l:triggerLength)
 
