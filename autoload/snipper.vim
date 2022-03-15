@@ -24,6 +24,10 @@
 "
 "************************************************************************
 
+" augroup BuildSnipDictAtBeginning
+"   autocmd BufEnter * call snipper#checkNeedToBuildSnippetDict()
+" augroup END
+
 " Self-explanatory.
 let g:snipper#commentLinePattern = '\m^#'
 let g:snipper#emptyLinePattern = '\m^$'
@@ -867,9 +871,9 @@ endfunction
 " both for the current filetype, and global triggers, for those that match
 " that string.
 function snipper#SearchForTrigger()
-  if snipper#checkNeedToBuildSnippetDict() == v:false
-    return ""
-  endif
+  " if snipper#checkNeedToBuildSnippetDict() == v:false
+  "   return ""
+  " endif
 
   " The list of triggers need to be (re-) constructed if, either it hasn't
   " been constructed for the first time yet, or if the filetype changed.
@@ -989,9 +993,9 @@ endfunction
 " former.
 function snipper#TriggerSnippet()
 
-  if snipper#checkNeedToBuildSnippetDict() == v:false
-    return ""
-  endif
+  " if snipper#checkNeedToBuildSnippetDict() == v:false
+  "   return ""
+  " endif
 
   if s:nextTabStopNum != 0
     " If s:nextTabStopNum is not its default value (0), that means that either
@@ -1114,6 +1118,9 @@ function snipper#TriggerSnippet()
   let l:prevCharIdx = l:triggerEndCharIdx
 
   while l:prevCharIdx >= 1 && l:line[l:prevCharIdx - 1] =~ '\m\S'
+    if stridx("$()[]{}<>*\"'", l:line[l:prevCharIdx - 1]) != -1
+      break " XXX for LaTeX...
+    endif
     let l:prevCharIdx -= 1
   endwhile
 

@@ -76,3 +76,5 @@ inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
 snoremap <silent> <Tab> va<C-r>=snipper#JumpToNextTabStop()<CR>
 
 nnoremap <silent> <C-s> :call snipper#SearchForTrigger()<CR>
+
+autocmd BufEnter * call snipper#checkNeedToBuildSnippetDict()
