@@ -20,7 +20,7 @@
 "    You should have received a copy of the GNU General Public License
 "    along with this program. If not, see <http://www.gnu.org/licenses/>.
 "
-"    Copyright Óscar Pereira, 2020-2021
+"    Copyright Óscar Pereira, 2020-2022
 "
 "************************************************************************
 
@@ -85,15 +85,15 @@ let s:triggerList = []
 " sign. 
 let s:cursorStartPos = -1
 
-" List of Dicts. Index 0 contain a Dictionary { lineIdx => [ a, b, c] } for
-" tabstop ${1}. a, b, and c are all the passive tabstops that exists in the
+" List of Dicts. Index 0 contains a Dictionary { lineIdx => [ a, b, c] } for
+" tabstop ${1}. a, b, and c are all the passive tabstops that exist in the
 " snippet line with index lineIdx (so the first line is 0, 1 for the second
 " line, and so on). The passive tabstops are also sorted by ascending index of
 " appearance: in the above example, a appears to the left of b, and b in turn
 " appears to the left of c.
 "
-" Whether or not there are passive tabstops, this is contain an (possibly
-" empty) Dict for each regular tabstop (i.e. ${1}, ${2}, etc.).
+" Whether or not there are passive tabstops, this contains a (possibly empty)
+" Dict for each regular tabstop (i.e. ${1}, ${2}, etc.).
 let s:groupedPassiveTabStopsList = []
 
 " Should be self-explanatory.
@@ -356,7 +356,7 @@ function snipper#ParseSnippetFile(snipFile, filetype)
     let l:aux = matchstr(line, g:snipper#snippetDeclarationLinePattern)
     if l:aux != ""
       " We found a "snippet trigger" line. So first, check to see if we have
-      " found that trigger before. If so, throw up error, has multiple snips
+      " found that trigger before. If so, throw up error, as multiple snips
       " are not supported.
       if has_key(g:snipper#snippets[a:filetype], l:aux) == v:true
         throw "DuplicateSnippetKeyFound: " . l:aux
@@ -391,7 +391,6 @@ function snipper#ParseSnippetFile(snipFile, filetype)
         " expansion of a snippet. So add it to the list of expansion lines,
         " and continue onto to the next line.
         call add(l:snippetLinesList, l:aux[0])
-        " call add(l:snippetLinesList, trim(l:aux[0], "\n\r", 2))
         continue
       else
         " We found a line that is not a comment, is not a "snippet trigger"
@@ -415,7 +414,7 @@ function snipper#ParseSnippetFile(snipFile, filetype)
 endfunction
 
 " Brief: This function sets the s:tabStops variable with the information for
-" the a:snip snippet.
+" the a:snip snippet. It also expands the snippet (see Return: below).
 "
 " Return: the snippet a:snip, as a string, with both ${1}, ${2}, etc., and $1,
 " $2, etc., replaced with their respective placeholders (or an empty string,
@@ -518,7 +517,7 @@ function snipper#ProcessSnippet(snip)
     let l:endCharIdx = charidx(l:snippetCurrLine, l:endIdx)
 
     " As their names let slip, these variables will contain the char idx for
-    " the current tabstop, and the length of its placeholder, if there one
+    " the current tabstop, and the length of its placeholder, if there is one
     " (otherwise it is left at 0).
     let l:startCharIdxForCurrTabStop = 0
     let l:placeHolderLength = 0
@@ -557,6 +556,8 @@ function snipper#ProcessSnippet(snip)
 
       let l:placeHolderLength = strcharlen(l:placeHolder)
 
+      " End replacing ${1:placeholder} with "placeholder", sans quotes.
+
     else " There is no placeholder.
       call add(l:placeHolders, "") " Eg: empty placeholder for ${1} has index 0
 
@@ -593,7 +594,7 @@ function snipper#ProcessSnippet(snip)
       "  nothing to append (else-clause below). Otherwise (if-clause), we use
       "  strcharpart(), starting from l:endCharIdx, and without giving it a
       "  length -- which means it will slurp all the remaining chars in the
-      "  snippet string.
+      "  snippet's current line.
       let l:startCharIdxForCurrTabStop = l:startCharIdx
       if l:endCharIdx != -1
         let l:snippetCurrLine =
@@ -607,7 +608,8 @@ function snipper#ProcessSnippet(snip)
     endif
 
     " Update the snippet line list with the current line, suitably modified to
-    " remove ${1}, etc.
+    " remove the tabstop currently being processed (starts with ${1}, and
+    " moves on...).
     let l:snippetLineList[l:snippetCurrLineIdx] = l:snippetCurrLine
 
     " See the comments for s:tabStops, at the start of the file.
@@ -637,7 +639,7 @@ function snipper#ProcessSnippet(snip)
       if g:snipper_debug | echomsg "Exceeded limit of 9 tabstops (${1} to ${9})." | endif
       throw "TooManyTabStops"
     endif
-  endwhile
+  endwhile " while 1
 
   " For all tabstops, add to s:tabStops the ones that are to the right of the
   " current one (in the same line). See comments of s:tabStops to see why this
@@ -804,16 +806,22 @@ function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList
   return l:snippet
 endfunction
 
-" If the user presses <Tab>, this function is called with the placeholder for
-" a:tabStopNum inplace. Otherwise, it is called with that placeholder
-" *removed*.
-" To discover which scenario we are in, we use the
-" s:lenghtOfLineWhereCursorWent variable (hack...)...
+" Say the user expands a snippet, which has a tabstop like so: ${1:foo}. After
+" hitting <Tab> for the first time to expand the snippet, he will be left in
+" select mode, which "foo" selected. If the user now presses <Tab>, this
+" function is called with the placeholder "foo" inplace. Otherwise, it is
+" called with that placeholder *removed*. To discover which scenario we are
+" in, we use the s:lenghtOfLineWhereCursorWent variable (hack...)...
+"   The argument a:tabStopNum contains the placeholder number (in the above
+" example it would have been 1).
 function snipper#RemovePlaceholders(tabStopNum)
   if s:lenghtOfLineWhereCursorWent == len(getline(s:snippetInsertionLineNum))
-    echomsg "User pressed <Tab>, so nothing to do here..."
+    echomsg "User pressed <Tab>, so keeping placeholders in place..."
     return
   endif
+
+  " Otherwise, user either hit <BS>, deleting the placeholder, or typed
+  " something (overwriting the placeholder).
 
   " This is not a part of the state. It is just to keep tabs on the cursor
   " position, so as to be able to detect, in function snipper#UpdateSnippet(),
@@ -1065,6 +1073,7 @@ function snipper#TriggerSnippet()
           autocmd!
           autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum)
           autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum)
+          " autocmd CursorMovedI * call snipper#UpdateState(l:idxForLine, l:idxForCursor)
         augroup END
       endif
     endif
@@ -1127,7 +1136,7 @@ function snipper#TriggerSnippet()
   " Now, after the above while loop, l:prevCharIdx contain the array idx of
   " the first character of the trigger word.
 
-  " NOTA BENE: trigger must be ASCII only!
+  " NOTA BENE: trigger must be ASCII only! XXX or not
   let l:triggerLength = l:triggerEndCharIdx - l:prevCharIdx + 1
   let l:trigger = strpart(l:line, l:prevCharIdx, l:triggerLength)
 
@@ -1292,7 +1301,11 @@ function snipper#UpdateSnippet(tabStopNum)
   let l:insertedCharIsBackspace = v:false
   let l:line = getline(".")
 
-  if l:curCol == s:curCol - 1
+  if l:curCol == s:curCol
+    " User deleted the placeholder with backspace or delete, inserting no
+    " char. Hence, no need to update anything...
+    return
+  elseif l:curCol == s:curCol - 1
     let l:insertedCharIsBackspace = v:true
     let l:charShift = -1
   else
@@ -1389,4 +1402,7 @@ function snipper#UpdateState(idxForLine, idxForCursor)
   " or €, count as only character). Hence, this works even with snippets
   " containing non-ASCII characters.
   let s:cursorStartPos = s:snippetInsertionPos + a:idxForCursor
+  echom "cur start pos " . s:cursorStartPos
+  echom "idx for cursor" . a:idxForCursor
+  echom "---"
 endfunction
