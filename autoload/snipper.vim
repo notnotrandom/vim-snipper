@@ -815,6 +815,7 @@ endfunction
 "   The argument a:tabStopNum contains the placeholder number (in the above
 " example it would have been 1).
 function snipper#RemovePlaceholders(tabStopNum)
+  echom "lllllllllllllllllaaaaaaaaaaaaaaaaaaaaaaaaaa"
   if s:lenghtOfLineWhereCursorWent == len(getline(s:snippetInsertionLineNum))
     echomsg "User pressed <Tab>, so keeping placeholders in place..."
     return
@@ -1013,12 +1014,20 @@ function snipper#TriggerSnippet()
     "   [len(s:tabStops) is the number (1-based) of the last tabstop in the
     " current snippet.]
 
+    " echom "raios partam... " . s:nextTabStopNum . " " . len(s:tabStops)
     if s:nextTabStopNum > len(s:tabStops)
       " There is no ${s:nextTabStopNum} tabstop, so first, clear the state.
       " And next, call snipper#TriggerSnippet() again, to check if the user
       " wants to expand another snippet trigger.
       "   We then return the result of that trigger check.
       call snipper#ClearState()
+
+      if exists("#vimSnipperAutocmds")
+        autocmd! vimSnipperAutocmds
+      endif
+      echom "foudasseeeeeeeee"
+      return
+
       let l:ret = snipper#TriggerSnippet()
       return l:ret
     endif
@@ -1061,22 +1070,22 @@ function snipper#TriggerSnippet()
     " done with the autocmd functions. Also, if there existed passive tabstops
     " for the previous (regular) tabstop, the autocmd's are cleared, as the
     " processing of that tabstop is basically over.
-    if len(s:passiveTabStops) == 0
-      for idx in l:idxsToUpdate
-        let s:tabStops[idx][1] += (l:lengthOfUserText - l:placeHolderLength)
-      endfor
-    else
-      " There are passive tabstops in the current snippet. So setup the
-      " autocmd's.
-      if len(s:groupedPassiveTabStopsList[s:nextTabStopNum - 1]) > 0
-        augroup vimSnipperAutocmds
-          autocmd!
-          autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum)
-          autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum)
-          " autocmd CursorMovedI * call snipper#UpdateState(l:idxForLine, l:idxForCursor)
-        augroup END
-      endif
-    endif
+    " if len(s:passiveTabStops) == 0
+    "   for idx in l:idxsToUpdate
+    "     let s:tabStops[idx][1] += (l:lengthOfUserText - l:placeHolderLength)
+    "   endfor
+    " else
+    "   " There are passive tabstops in the current snippet. So setup the
+    "   " autocmd's.
+    "   if len(s:groupedPassiveTabStopsList[s:nextTabStopNum - 1]) > 0
+    "     augroup vimSnipperAutocmds
+    "       autocmd!
+    "       autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum)
+    "       autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum)
+    "       " autocmd CursorMovedI * call snipper#UpdateState(l:idxForLine, l:idxForCursor)
+    "     augroup END
+    "   endif
+    " endif
 
     " (cont.) And retrieve the information about ${s:nextTabStopNum} (which
     " has index s:nextTabStopNum - 1).
@@ -1090,6 +1099,13 @@ function snipper#TriggerSnippet()
     " NOTA BENE: function snipper#UpdateState() increaments
     " s:nextTabStopNum, which is a part of the state that needs to be kept.
     call snipper#UpdateState(l:idxForLine, l:idxForCursor)
+
+    echom "setting autocmds " . s:nextTabStopNum . " " . len(s:tabStops)
+    augroup vimSnipperAutocmds
+      autocmd!
+      autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
+      autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
+    augroup END
 
     call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
     return snipper#FigureOutWhatToReturn(l:placeHolderLength)
@@ -1275,15 +1291,21 @@ function snipper#TriggerSnippet()
   " UpdateState() function.
   call snipper#UpdateState(l:idxForLine, l:idxForCursor)
 
-  if len(s:groupedPassiveTabStopsList[0]) > 0
-    " If control reaches here, then at least tabstop ${1} exists; hence
-    " s:groupedPassiveTabStopsList has an least one element (an hash table).
-		augroup vimSnipperAutocmds
-      autocmd!
-      autocmd InsertEnter * call snipper#RemovePlaceholders(1)
-      autocmd CursorMovedI * call snipper#UpdateSnippet(1)
-    augroup END
-  endif
+  " if len(s:groupedPassiveTabStopsList[0]) > 0
+  "   " If control reaches here, then at least tabstop ${1} exists; hence
+  "   " s:groupedPassiveTabStopsList has an least one element (an hash table).
+		" augroup vimSnipperAutocmds
+  "     autocmd!
+  "     autocmd InsertEnter * call snipper#RemovePlaceholders(1)
+  "     autocmd CursorMovedI * call snipper#UpdateSnippet(1)
+  "   augroup END
+  " endif
+
+	augroup vimSnipperAutocmds
+    autocmd!
+    autocmd InsertEnter * call snipper#RemovePlaceholders(1)
+    autocmd CursorMovedI * call snipper#UpdateSnippet(1)
+  augroup END
 
   " The next two functions place the cursor at the first tabstop location
   " (remember that the "${1}" string is no longer there), and visually select
@@ -1295,17 +1317,20 @@ function snipper#TriggerSnippet()
 endfunction
 
 function snipper#UpdateSnippet(tabStopNum)
+  echom "value of tabStopNum arg in UpdateSnippet " . a:tabStopNum
   let l:charShift = 1
   let l:curCol = charcol(".")
   let l:insertedChar = ""
   let l:insertedCharIsBackspace = v:false
   let l:line = getline(".")
 
-  if l:curCol == s:curCol
+  " if curr snippet has no placeholders, s:curCol will be undefined.
+
+  if exists("s:curCol") && l:curCol == s:curCol
     " User deleted the placeholder with backspace or delete, inserting no
     " char. Hence, no need to update anything...
     return
-  elseif l:curCol == s:curCol - 1
+  elseif exists("s:curCol") && l:curCol == s:curCol - 1
     let l:insertedCharIsBackspace = v:true
     let l:charShift = -1
   else
@@ -1318,10 +1343,12 @@ function snipper#UpdateSnippet(tabStopNum)
   " for cycling back, maybe?
   " let s:tabStops[a:tabStopNum - 1][1] += 1
 
-  " Update passive deps of current tabstop.
-  for elem in s:tabStops[a:tabStopNum - 1][4]
-    let s:passiveTabStops[elem][1] += l:charShift
-  endfor
+  " Update passive deps of current tabstop, if any.
+  if len(s:tabStops[a:tabStopNum - 1]) >= 4
+    for elem in s:tabStops[a:tabStopNum - 1][4]
+      let s:passiveTabStops[elem][1] += l:charShift
+    endfor
+  endif
 
   " Update active deps of current tabstop.
   for elem in s:tabStops[a:tabStopNum - 1][3]
@@ -1402,7 +1429,4 @@ function snipper#UpdateState(idxForLine, idxForCursor)
   " or €, count as only character). Hence, this works even with snippets
   " containing non-ASCII characters.
   let s:cursorStartPos = s:snippetInsertionPos + a:idxForCursor
-  echom "cur start pos " . s:cursorStartPos
-  echom "idx for cursor" . a:idxForCursor
-  echom "---"
 endfunction
