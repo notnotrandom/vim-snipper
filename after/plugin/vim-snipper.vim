@@ -72,7 +72,7 @@ inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
 " snipper#FigureOutWhatToReturn()), after hitting 'v', the cursor is left on
 " the *rightmost* character of the placeholder. And so, hitting 'a' leaves the
 " cursor right after the placeholder text, as if the user had typed it
-" himself.
+" himself. Note that this implies entering in Insert mode.
 snoremap <silent> <Tab> va<C-r>=snipper#JumpToNextTabStop()<CR>
 
 nnoremap <silent> <C-s> :call snipper#SearchForTrigger()<CR>
