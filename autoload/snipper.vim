@@ -228,6 +228,7 @@ endfunction
 " function tests for.
 "
 function snipper#ClearState()
+  let s:curCol                     = -1
   let s:cursorStartPos             = -1
   let s:groupedPassiveTabStopsList = []
   let s:nextTabStopNum             = 0
@@ -247,10 +248,6 @@ function snipper#ClearState()
   " clears.
   sunmap <buffer> <BS>
 
-  " Ordinarily, this clearing of autocmd's would not be needed here (it is
-  " dealt with in snipper#TriggerSnippet()). It is here for the case when the
-  " user halts the snippet insertion with <Esc> or <C-c>: in this scenario,
-  " there is no other place to clear them.
   if exists("#vimSnipperAutocmds")
     autocmd! vimSnipperAutocmds
   endif
@@ -299,11 +296,12 @@ function snipper#JumpToNextTabStop()
     return ""
   endif
 
-  " Otherwise, start by clearing autocmd's, if any. (In the above case this is
-  " done by ClearState().)
-  if exists("#vimSnipperAutocmds")
-    autocmd! vimSnipperAutocmds
-  endif
+  " Otherwise, we would start by clearing autocmd's, if any. (In the above
+  " case this is done by ClearState().) However, below the autocmds will be
+  " reset for the next tabstop, clearing all previous autocmds, if any. Hence,
+  " we skip this step of explicitly clearing the autocmds. (The user will only
+  " be able to type after this function has finished, by which time the
+  " autocmds will be properly set.)
 
   " Set up <Esc> and <C-c> maps, in case the user decides to terminate the
   " snippet processing.
@@ -323,6 +321,15 @@ function snipper#JumpToNextTabStop()
   " case it is incremented by 2). But if control reaches here, then the
   " variable is not 0 -- so its update is just += 1.)
   let s:nextTabStopNum += 1
+
+  " To understand why this is here, and in particular, why are the autocmds
+  " set after incrementing s:nextTabStopNum, see the comments at the autocmd
+  " in snipper#UpdateState().
+  augroup vimSnipperAutocmds
+    autocmd!
+    autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
+    autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
+  augroup END
 
   call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
   return snipper#FigureOutWhatToReturn(l:placeHolderLength)
@@ -1001,10 +1008,6 @@ endfunction
 " former.
 function snipper#TriggerSnippet()
 
-  " if snipper#checkNeedToBuildSnippetDict() == v:false
-  "   return ""
-  " endif
-
   if s:nextTabStopNum != 0
     " If s:nextTabStopNum is not its default value (0), that means that either
     " ${s:nextTabStopNum - 1} or ${s:nextTabStopNum - 1:arg} exist, so now we
@@ -1020,10 +1023,6 @@ function snipper#TriggerSnippet()
       "   We then return the result of that trigger check.
       call snipper#ClearState()
 
-      if exists("#vimSnipperAutocmds")
-        autocmd! vimSnipperAutocmds
-      endif
-
       let l:ret = snipper#TriggerSnippet()
       return l:ret
     endif
@@ -1032,76 +1031,19 @@ function snipper#TriggerSnippet()
     " arrives here because at ${s:nextTabStopNum - 1}, the user typed the
     " text he wanted, and then hit <Tab>. And that brought him to the
     " current tabstop, viz., s:nextTabStopNum.
-    "   Start by clearing any autocmd's that might be set (the next tabstop
-    " might not need any autocmd's, and even it does, there are parameters
-    " that have to be reset before setting the autocmd's up again). Then,
-    " obtain the current line, and current cursor position. From both of
-    " those, compute the char length of the text the user entered, at the
-    " *previous* tabstop (${s:nextTabStopNum - 1}).
-    "
-    if exists("#vimSnipperAutocmds")
-      autocmd! vimSnipperAutocmds
-    endif
 
-    " let l:line = getline(".") " Current line.
-    " let l:lineNum = line(".") " Current line number.
-    " let l:charCol = charcol(".") " cursor column (char-idx) when user hit <Tab> again.
-    " let l:lengthOfUserText = strcharlen(slice(l:line, s:cursorStartPos, l:charCol))
+    " So we set the traps for the processing of the current tabsop,
+    " ${s:nextTabStopNum}.
+    call snipper#SetTraps()
 
-    " (cont.) Obtain the record for that previous tabstop. (Recall that the
-    " current tabstop has index s:nextTabStopNum - 1, so the index of the
-    " previous one is s:nextTabStopNum - 2).
-    " let [ l:idxForLine, l:idxForCursor, l:placeHolderLength, l:idxsToUpdate,
-    "       \ l:passiveIdxsToUpdate ] = s:tabStops[s:nextTabStopNum - 2]
-
-    " Keep in mind that we are still working with the *previous* tabstop,
-    " ${s:nextTabStopNum - 1} (which has index s:nextTabStopNum - 2 in
-    " s:tabStops). Thus, l:idxsToUpdate contains the *indexes* (not tabstop
-    " numbers) of all tabstops that are (in the same line) to the right of
-    " ${s:nextTabStopNum - 1}. For those, we need to keep the cursor char
-    " index accurate, adding to it the difference between the length of the
-    " user inserted text, and the length of the placeholder.
-    "   However, this is only done if there are no passive tabstops, FOR THE
-    " ENTIRE SNIPPET; otherwise updating the (regular) tabstops' position is
-    " done with the autocmd functions. Also, if there existed passive tabstops
-    " for the previous (regular) tabstop, the autocmd's are cleared, as the
-    " processing of that tabstop is basically over.
-    " if len(s:passiveTabStops) == 0
-    "   for idx in l:idxsToUpdate
-    "     let s:tabStops[idx][1] += (l:lengthOfUserText - l:placeHolderLength)
-    "   endfor
-    " else
-    "   " There are passive tabstops in the current snippet. So setup the
-    "   " autocmd's.
-    "   if len(s:groupedPassiveTabStopsList[s:nextTabStopNum - 1]) > 0
-    "     augroup vimSnipperAutocmds
-    "       autocmd!
-    "       autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum)
-    "       autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum)
-    "       " autocmd CursorMovedI * call snipper#UpdateState(l:idxForLine, l:idxForCursor)
-    "     augroup END
-    "   endif
-    " endif
-
-    " (cont.) And retrieve the information about ${s:nextTabStopNum} (which
-    " has index s:nextTabStopNum - 1).
+    " And retrieve the information about ${s:nextTabStopNum} (which has index
+    " s:nextTabStopNum - 1). This is needed for snipper#UpdateState().
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[s:nextTabStopNum - 1]
-
-    " At this point, processing ${s:nextTabStopNum - 1} is done. So we set
-    " the traps for the processing of the current tabsop, ${s:nextTabStopNum}.
-    call snipper#SetTraps()
 
     " NOTA BENE: function snipper#UpdateState() increaments
     " s:nextTabStopNum, which is a part of the state that needs to be kept.
     call snipper#UpdateState(l:idxForLine, l:idxForCursor)
-
-    echom "setting autocmds " . (s:nextTabStopNum - 1)
-    augroup vimSnipperAutocmds
-      autocmd!
-      autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
-      autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
-    augroup END
 
     call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
     return snipper#FigureOutWhatToReturn(l:placeHolderLength)
@@ -1287,22 +1229,6 @@ function snipper#TriggerSnippet()
   " UpdateState() function.
   call snipper#UpdateState(l:idxForLine, l:idxForCursor)
 
-  " if len(s:groupedPassiveTabStopsList[0]) > 0
-  "   " If control reaches here, then at least tabstop ${1} exists; hence
-  "   " s:groupedPassiveTabStopsList has an least one element (an hash table).
-		" augroup vimSnipperAutocmds
-  "     autocmd!
-  "     autocmd InsertEnter * call snipper#RemovePlaceholders(1)
-  "     autocmd CursorMovedI * call snipper#UpdateSnippet(1)
-  "   augroup END
-  " endif
-
-	augroup vimSnipperAutocmds
-    autocmd!
-    autocmd InsertEnter * call snipper#RemovePlaceholders(1)
-    autocmd CursorMovedI * call snipper#UpdateSnippet(1)
-  augroup END
-
   " The next two functions place the cursor at the first tabstop location
   " (remember that the "${1}" string is no longer there), and visually select
   " the placeholder, if any, and go to select mode. (If there is no
@@ -1405,7 +1331,27 @@ function snipper#UpdateState(idxForLine, idxForCursor)
     let s:nextTabStopNum += 1
   endif
 
-  " See comments for s:snippetLineIdx.
+  " Set autocmds for the tab stop we just finished processing, i.e.,
+  " s:nextTabStopNum - 1. This way, as the user types his text, the
+  " autocommands will update any (possible passive) tabstops that need to be
+  " update as a result of the text entered, for the current tabstop.
+  "   The reason this is done like this, instead of setting the autocmds for
+  " s:nextTabStopNum, and then incrementing it, is that, if done like that,
+  " when the autocmds are actually run, they will use the current value of
+  " s:nextTabStopNum, AFTER IT HAS BEEN INCREMENTED -- which is not what is
+  " desired.
+  "   This approach does not suffer from the above problem, because
+  " s:nextTabStopNum will only be changed after the user hits <Tab> again --
+  " and so, while he is typing (i.e., before he hits <Tab>), s:nextTabStopNum
+  " - 1 will have the same value as it had when the autocmds where set:
+  " namely, the value of the tabstop at which the user is typing.
+  augroup vimSnipperAutocmds
+    autocmd!
+    autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
+    autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
+  augroup END
+
+  " See comments for s:snippetLineIdx, in the top part of the file.
   let s:snippetLineIdx = a:idxForLine
 
   " The column (char-based) at which the cursor is placed after the processing
