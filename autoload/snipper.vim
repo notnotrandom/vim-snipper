@@ -305,10 +305,10 @@ function snipper#JumpToNextTabStop()
 
   " Set up <Esc> and <C-c> maps, in case the user decides to terminate the
   " snippet processing.
-  call snipper#SetTraps()
+  " call snipper#SetTraps()
 
-  " Grab the info the current tabstop (s:nextTabStopNum - 1 is the *index* for
-  " the current tabstop).
+  " Grab the info the tabstop we just jumped to (its *index* is
+  " s:nextTabStopNum - 1).
   let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
         \ s:tabStops[s:nextTabStopNum - 1]
 
@@ -325,6 +325,38 @@ function snipper#JumpToNextTabStop()
   " To understand why this is here, and in particular, why are the autocmds
   " set after incrementing s:nextTabStopNum, see the comments at the autocmd
   " in snipper#UpdateState().
+  augroup vimSnipperAutocmds
+    autocmd!
+    autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
+    autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
+  augroup END
+
+  call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
+  return snipper#FigureOutWhatToReturn(l:placeHolderLength)
+endfunction
+
+function snipper#JumpToPreviousTabStop()
+  if s:nextTabStopNum == 0
+    if g:snipper_debug | echomsg "In function snipper#JumpToPreviousTabStop(): " .
+          \ "caught s:nextTabStopNum = 0." | endif
+    return ""
+  endif
+
+  if s:nextTabStopNum < 3
+    " If we are already at the first tabstop, and the user wants to go back
+    " one more, then we simulate going back... to the first tabstop. I.e., we
+    " stay put.
+    let s:nextTabStopNum = 3
+  endif
+
+  let s:nextTabStopNum -= 1
+
+  let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
+        \ s:tabStops[s:nextTabStopNum - 2]
+
+  let s:snippetLineIdx = l:idxForLine
+  let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
+
   augroup vimSnipperAutocmds
     autocmd!
     autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
@@ -1034,7 +1066,11 @@ function snipper#TriggerSnippet()
 
     " So we set the traps for the processing of the current tabsop,
     " ${s:nextTabStopNum}.
-    call snipper#SetTraps()
+    " call snipper#SetTraps()
+
+    " Here s:nextTabStopNum is at least 2.
+    let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
+          \ s:tabStops[s:nextTabStopNum - 2]
 
     " And retrieve the information about ${s:nextTabStopNum} (which has index
     " s:nextTabStopNum - 1). This is needed for snipper#UpdateState().

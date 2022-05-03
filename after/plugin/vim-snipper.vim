@@ -75,6 +75,8 @@ inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
 " himself. Note that this implies entering in Insert mode.
 snoremap <silent> <Tab> va<C-r>=snipper#JumpToNextTabStop()<CR>
 
+snoremap <silent> <S-Tab> va<C-r>=snipper#JumpToPreviousTabStop()<CR>
+
 nnoremap <silent> <C-s> :call snipper#SearchForTrigger()<CR>
 
 autocmd BufEnter * call snipper#checkNeedToBuildSnippetDict()
