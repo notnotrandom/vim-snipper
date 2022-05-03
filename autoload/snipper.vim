@@ -335,7 +335,8 @@ function snipper#JumpToNextTabStop()
   return snipper#FigureOutWhatToReturn(l:placeHolderLength)
 endfunction
 
-function snipper#JumpToPreviousTabStop()
+" a:comingFromInsertMode is 1 if insert mode map, 0 otherwise
+function snipper#JumpToPreviousTabStop(comingFromInsertMode)
   if s:nextTabStopNum == 0
     if g:snipper_debug | echomsg "In function snipper#JumpToPreviousTabStop(): " .
           \ "caught s:nextTabStopNum = 0." | endif
@@ -351,14 +352,15 @@ function snipper#JumpToPreviousTabStop()
 
   let s:nextTabStopNum -= 1
 
-  " Here s:nextTabStopNum is at least 2. We update l:placeHolderLength of the
-  " tabstop the user is leaving...
-  let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
-        \ s:tabStops[s:nextTabStopNum - 1]
-  let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor) " length of the text the user entered at the placeholder he went back to
+  if a:comingFromInsertMode == 1
+    " Here s:nextTabStopNum is at least 2. We update l:placeHolderLength of the
+    " tabstop the user is leaving...
+    let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
+          \ s:tabStops[s:nextTabStopNum - 1]
+    let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor) " length of the text the user entered at the placeholder he went back to
 
-  " s:nextTabStopNum - 1 is the index of the tabstop the user just left
-  let s:tabStops[s:nextTabStopNum - 1][2] = l:charShift
+    call UpdateDependencies(s:nextTabStopNum, l:charShift)
+  endif
 
   let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
         \ s:tabStops[s:nextTabStopNum - 2]
@@ -1077,41 +1079,18 @@ function snipper#TriggerSnippet()
     " ${s:nextTabStopNum}.
     " call snipper#SetTraps()
 
-    " Here s:nextTabStopNum is at least 2. We update l:placeHolderLength.
+    " Here s:nextTabStopNum is at least 2. We update l:placeHolderLength of the
+    " tabstop the user is leaving...
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[s:nextTabStopNum - 2]
     let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor) " length of the text the user entered at the placeholder he went back to
-    echom "char shift: " . l:charShift
-    let s:tabStops[s:nextTabStopNum - 2][2] = l:charShift
-
-    " ----
-    for l:key in keys(s:groupedPassiveTabStopsList[s:nextTabStopNum - 2])
-
-      " Names of passive TS, e.g., a, b, etc., already sorted (ascending).
-      let l:pTabStopsInCurrLine_l =
-            \ s:groupedPassiveTabStopsList[s:nextTabStopNum - 2][l:key]
-
-      for idx in range(len(l:pTabStopsInCurrLine_l))
-
-        let s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1] -= l:charShift
-
-      "   " Update passive deps of the passive tabstop we just added a char to.
-      "   for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][3]
-      "     let s:passiveTabStops[elem][1] -= l:charShift
-      "   endfor
-
-      "   " Update active deps of the passive tabstop we just added a char to.
-      "   for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][2]
-      "     let s:tabStops[elem][1] -= l:charShift
-      "   endfor
-      endfor
-    endfor
-    " ----
+    " call UpdateDependencies(s:nextTabStopNum - 1, l:charShift)
 
     " And retrieve the information about ${s:nextTabStopNum} (which has index
     " s:nextTabStopNum - 1). This is needed for snipper#UpdateState().
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[s:nextTabStopNum - 1]
+    echom "idx for cursor " l:idxForCursor
 
     " NOTA BENE: function snipper#UpdateState() increaments
     " s:nextTabStopNum, which is a part of the state that needs to be kept.
@@ -1442,4 +1421,49 @@ function snipper#UpdateState(idxForLine, idxForCursor)
   " or €, count as only character). Hence, this works even with snippets
   " containing non-ASCII characters.
   let s:cursorStartPos = s:snippetInsertionPos + a:idxForCursor
+endfunction
+
+function UpdateDependencies(tabStopNum, charShift)
+  " echom "len char shift " . a:charShift
+
+  let l:oldPlaceHolder = s:tabStops[a:tabStopNum - 1][2]
+  " echom "len of old placeholder " . s:tabStops[a:tabStopNum - 1][2]
+
+  " len of new "placeholder"
+  let s:tabStops[a:tabStopNum - 1][2] = a:charShift 
+
+  let l:shiftForDeps = a:charShift - l:oldPlaceHolder
+
+  " Update active deps of current (active) tabstop.
+  for elem in s:tabStops[a:tabStopNum - 1][3]
+    echom "before " . s:tabStops[elem][1]
+    let s:tabStops[elem][1] += l:shiftForDeps
+    echom "after " . s:tabStops[elem][1]
+  endfor
+
+  " Update passive deps of current (active) tabstop, if any.
+  if len(s:tabStops[a:tabStopNum - 1]) >= 4
+    for elem in s:tabStops[a:tabStopNum - 1][4]
+      let s:passiveTabStops[elem][1] += l:shiftForDeps
+    endfor
+  endif
+
+  for l:key in keys(s:groupedPassiveTabStopsList[a:tabStopNum - 1])
+    " Names of passive TS, e.g., a, b, etc., already sorted (ascending).
+    let l:pTabStopsInCurrLine_l =
+          \ s:groupedPassiveTabStopsList[a:tabStopNum - 1][l:key]
+
+    for idx in range(len(l:pTabStopsInCurrLine_l))
+
+      " Update passive deps of the passive tabstop we just added a char to.
+      for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][3]
+        let s:passiveTabStops[elem][1] += l:shiftForDeps
+      endfor
+
+      " Update active deps of the passive tabstop we just added a char to.
+      for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][2]
+        let s:tabStops[elem][1] += l:shiftForDeps
+      endfor
+    endfor
+  endfor
 endfunction
