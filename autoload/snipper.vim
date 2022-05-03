@@ -351,6 +351,15 @@ function snipper#JumpToPreviousTabStop()
 
   let s:nextTabStopNum -= 1
 
+  " Here s:nextTabStopNum is at least 2. We update l:placeHolderLength of the
+  " tabstop the user is leaving...
+  let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
+        \ s:tabStops[s:nextTabStopNum - 1]
+  let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor) " length of the text the user entered at the placeholder he went back to
+
+  " s:nextTabStopNum - 1 is the index of the tabstop the user just left
+  let s:tabStops[s:nextTabStopNum - 1][2] = l:charShift
+
   let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
         \ s:tabStops[s:nextTabStopNum - 2]
 
@@ -1071,7 +1080,33 @@ function snipper#TriggerSnippet()
     " Here s:nextTabStopNum is at least 2. We update l:placeHolderLength.
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[s:nextTabStopNum - 2]
-    let s:tabStops[s:nextTabStopNum - 2][2] = charcol(".") - (s:snippetInsertionPos + l:idxForCursor)
+    let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor) " length of the text the user entered at the placeholder he went back to
+    echom "char shift: " . l:charShift
+    let s:tabStops[s:nextTabStopNum - 2][2] = l:charShift
+
+    " ----
+    for l:key in keys(s:groupedPassiveTabStopsList[s:nextTabStopNum - 2])
+
+      " Names of passive TS, e.g., a, b, etc., already sorted (ascending).
+      let l:pTabStopsInCurrLine_l =
+            \ s:groupedPassiveTabStopsList[s:nextTabStopNum - 2][l:key]
+
+      for idx in range(len(l:pTabStopsInCurrLine_l))
+
+        let s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1] -= l:charShift
+
+      "   " Update passive deps of the passive tabstop we just added a char to.
+      "   for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][3]
+      "     let s:passiveTabStops[elem][1] -= l:charShift
+      "   endfor
+
+      "   " Update active deps of the passive tabstop we just added a char to.
+      "   for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][2]
+      "     let s:tabStops[elem][1] -= l:charShift
+      "   endfor
+      endfor
+    endfor
+    " ----
 
     " And retrieve the information about ${s:nextTabStopNum} (which has index
     " s:nextTabStopNum - 1). This is needed for snipper#UpdateState().

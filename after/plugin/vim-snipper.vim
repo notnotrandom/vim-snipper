@@ -63,6 +63,7 @@ au BufRead,BufNewFile *.snippets\= set ft=snippet
 au FileType snippet setl noet fdm=indent
 
 inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
+inoremap <silent> <S-Tab> <C-r>=snipper#JumpToPreviousTabStop()<CR>
 
 " This mapping for the scenario where the user decided to keep the
 " placeholder's text, and, with the placeholder text still selected, hits
