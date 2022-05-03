@@ -1068,9 +1068,10 @@ function snipper#TriggerSnippet()
     " ${s:nextTabStopNum}.
     " call snipper#SetTraps()
 
-    " Here s:nextTabStopNum is at least 2.
+    " Here s:nextTabStopNum is at least 2. We update l:placeHolderLength.
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[s:nextTabStopNum - 2]
+    let s:tabStops[s:nextTabStopNum - 2][2] = charcol(".") - (s:snippetInsertionPos + l:idxForCursor)
 
     " And retrieve the information about ${s:nextTabStopNum} (which has index
     " s:nextTabStopNum - 1). This is needed for snipper#UpdateState().
@@ -1228,7 +1229,7 @@ function snipper#TriggerSnippet()
     return ""
   endif " if len(s:tabStops) == 0
 
-  " Otherwise there are tabsopts to process. So we process the first one,
+  " Otherwise there are tabstops to process. So we process the first one,
   " ${1}, and call UpdateState(), to prepare the processing of the next
   " tabstop, should it exist.
 
