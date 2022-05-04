@@ -64,6 +64,8 @@ au FileType snippet setl noet fdm=indent
 
 inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
 
+inoremap <silent> <S-Tab> <C-r>=snipper#JumpToPreviousTabStop(1)<CR>
+
 " This mapping for the scenario where the user decided to keep the
 " placeholder's text, and, with the placeholder text still selected, hits
 " <Tab>. In that case, we first disable select mode (^G), which renders us in
@@ -74,6 +76,8 @@ inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
 " cursor right after the placeholder text, as if the user had typed it
 " himself. Note that this implies entering in Insert mode.
 snoremap <silent> <Tab> va<C-r>=snipper#JumpToNextTabStop()<CR>
+
+snoremap <silent> <S-Tab> va<C-r>=snipper#JumpToPreviousTabStop(0)<CR>
 
 nnoremap <silent> <C-s> :call snipper#SearchForTrigger()<CR>
 
