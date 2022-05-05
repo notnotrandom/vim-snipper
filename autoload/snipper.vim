@@ -24,10 +24,6 @@
 "
 "************************************************************************
 
-" augroup BuildSnipDictAtBeginning
-"   autocmd BufEnter * call snipper#checkNeedToBuildSnippetDict()
-" augroup END
-
 let s:charActuallyInserted = v:false
 
 " Self-explanatory.
@@ -39,6 +35,9 @@ let g:snipper#emptyLinePattern = '\m^$'
 let g:snipper#snippetDeclarationLinePattern = '\m^snippet \zs\S\+\ze\(\s\|$\)'
 
 let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze$'
+
+" For LaTeX, inter alia...
+let g:snipper#triggerBoundaries = "$()[]{}<>*\"'"
 
 let s:lenghtOfLineWhereCursorWent = 0 " very ugly hack... :-(
 
@@ -101,9 +100,10 @@ let s:groupedPassiveTabStopsList = []
 " Should be self-explanatory.
 let s:nextTabStopNum = 0
 
-" Dictionary, containing ALL the passive tabstops, numbered from a to z, by
-" order of appearance (left to right, top to bottom). These, letters from a to
-" z, are the keys of the hashtables. For each key, its value is an array,
+" Dictionary, containing ALL the passive tabstops -- i.e., things like $1,
+" which get the contents of the active tabstop ${1} -- numbered from a to z,
+" by order of appearance (left to right, top to bottom). These, letters from a
+" to z, are the keys of the hashtables. For each key, its value is an array,
 " containing, the same parameters as the elements of s:tabStops, except for
 " placeholder length. (So s:tabStops parameters with indexes 3 and 4, here are
 " 2 and 3 respectively.)
@@ -166,7 +166,12 @@ function snipper#BuildSnippetDict()
   endif
 endfunction
 
-function snipper#checkNeedToBuildSnippetDict()
+" Brief: Triggered via an autocmd for the InsertCharPre event.
+function snipper#CharActuallyInserted()
+  let s:charActuallyInserted = v:true
+endfunction
+
+function snipper#CheckNeedToBuildSnippetDict()
   if len(g:snipper#snippets) == 0 ||
         \ ( &filetype != "" && has_key(g:snipper#snippets, &filetype) == v:false )
     try
@@ -338,7 +343,7 @@ function snipper#JumpToNextTabStop()
   return snipper#FigureOutWhatToReturn(l:placeHolderLength)
 endfunction
 
-" a:comingFromInsertMode is 1 if insert mode map, 0 otherwise
+" Param: a:comingFromInsertMode is 1 if insert mode map, 0 otherwise.
 function snipper#JumpToPreviousTabStop(comingFromInsertMode)
   if s:nextTabStopNum == 0
     if g:snipper_debug | echomsg "In function snipper#JumpToPreviousTabStop(): " .
@@ -347,24 +352,42 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
   endif
 
   if s:nextTabStopNum < 3
-    " If we are already at the first tabstop, and the user wants to go back
-    " one more, then we simulate going back... to the first tabstop. I.e., we
-    " stay put.
+    " If s:nextTabStopNum = 2, then the user is currently at tabstop number 1.
+    " If he wants to go back even further, we just leave him at tabstop 1
+    " again. We do this by simulating he is at tabstop 2 (and so,
+    " s:nextTabStopNum = 3) -- and let the remainder of this function carry
+    " him "back" to tabstop 1.
     let s:nextTabStopNum = 3
   endif
 
-  let s:nextTabStopNum -= 1 " Tabstop number that the user just came from.
+  " If we want to make the tabstop before the one the user is currently on,
+  " the current one, then the next tabstop will be the tabstop the user is
+  " currently on.
+  let s:nextTabStopNum -= 1
 
   if a:comingFromInsertMode == 1
-    " Here s:nextTabStopNum is at least 2. We update l:placeHolderLength of the
-    " tabstop the user is leaving...
+    " If this function is being called from insert mode, then the text for the
+    " tabstop the user was just at, s:nextTabStopNum, may have been modified.
+    " So I take the text the user inserted (which may have length 0, i.e., no
+    " text), and treat it as a place holder for that tabstop. In particular,
+    " if the user goes back to said tabstop, that inserted text will be shown
+    " selected (if no text was inserted, then just leave the user in insert
+    " mode, as done for tabstops without a placeholder).
+    "   Recall that here s:nextTabStopNum is at least 2.
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[s:nextTabStopNum - 1]
-    let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor) " length of the text the user entered at the placeholder he went back to
+
+    " Length of the text the user entered at the tabstop he was just at,
+    " before this function being called.
+    let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor)
     let s:tabStops[s:nextTabStopNum - 1][2] = l:charShift
 
-    " We also reset the "starting point" for the passive deps of
-    " l:tabStopNumTheUserJustCameFrom
+    " We also reset the "starting point" for the passive deps of same tabstop
+    " (the one the was just at before this function being called). This is
+    " needed because for passive deps, the starting point is increased by 1,
+    " for each typed character (cf. snipper#UpdateSnippet()). But here, we
+    " need to make that starting point go back, as many chars as the ones the
+    " user inserted -- i.e., as many chars as the place holder has.
     for l:key in keys(s:groupedPassiveTabStopsList[s:nextTabStopNum - 1])
       let l:pTabStopsInCurrLine_l =
             \ s:groupedPassiveTabStopsList[s:nextTabStopNum - 1][l:key]
@@ -382,9 +405,10 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
     autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
   augroup END
 
+  " Finally, set up the cursor position for the tabstop where the users to go
+  " to -- which has index s:nextTabStopNum - 2.
   let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
         \ s:tabStops[s:nextTabStopNum - 2]
-
   let s:snippetLineIdx = l:idxForLine
   let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
 
@@ -680,7 +704,6 @@ function snipper#ProcessSnippet(snip)
     " See the comments for s:tabStops, at the start of the file.
     call add(s:tabStops, [ l:snippetCurrLineIdx, l:startCharIdxForCurrTabStop,
                          \ l:placeHolderLength, [], []] )
-    echom "cur idx " . l:startCharIdxForCurrTabStop
 
     " Update previous tabstops that are on the same line, and to the right of
     " the current one. Because in that case, replacing ${d:foo} with foo, or
@@ -886,8 +909,6 @@ function snipper#RemovePlaceholders(tabStopNum)
     return
   endif
 
-  " echom "removing placeholders for ts... " . a:tabStopNum
-
   " Otherwise, user either hit <BS>, deleting the placeholder, or typed
   " something (overwriting the placeholder).
 
@@ -897,7 +918,6 @@ function snipper#RemovePlaceholders(tabStopNum)
   let s:curCol = charcol(".")
 
   let l:placeholderLen = s:tabStops[a:tabStopNum-1][2]
-  echom "removing placeholder with len... " . l:placeholderLen
 
   " Update passive deps of current tabstop.
   for elem in s:tabStops[a:tabStopNum - 1][4]
@@ -941,7 +961,6 @@ function snipper#RemovePlaceholders(tabStopNum)
     " We have a finished new line; so added to the Dict of new lines to be
     " inserted into the file.
     call setline(l:lineNum, l:newLine)
-    echom "new line : " . l:newLine
   endfor
 endfunction
 
@@ -949,10 +968,6 @@ endfunction
 " both for the current filetype, and global triggers, for those that match
 " that string.
 function snipper#SearchForTrigger()
-  " if snipper#checkNeedToBuildSnippetDict() == v:false
-  "   return ""
-  " endif
-
   " The list of triggers need to be (re-) constructed if, either it hasn't
   " been constructed for the first time yet, or if the filetype changed.
   if s:triggerList == [] || &filetype != s:filetype
@@ -1161,8 +1176,9 @@ function snipper#TriggerSnippet()
   let l:prevCharIdx = l:triggerEndCharIdx
 
   while l:prevCharIdx >= 1 && l:line[l:prevCharIdx - 1] =~ '\m\S'
-    if stridx("$()[]{}<>*\"'", l:line[l:prevCharIdx - 1]) != -1
-      break " XXX for LaTeX...
+    " See comments for g:snipper#triggerBoundaries.
+    if stridx(g:snipper#triggerBoundaries, l:line[l:prevCharIdx - 1]) != -1
+      break
     endif
     let l:prevCharIdx -= 1
   endwhile
@@ -1170,7 +1186,7 @@ function snipper#TriggerSnippet()
   " Now, after the above while loop, l:prevCharIdx contain the array idx of
   " the first character of the trigger word.
 
-  " NOTA BENE: trigger must be ASCII only! XXX or not
+  " NOTA BENE: trigger must be ASCII only!
   let l:triggerLength = l:triggerEndCharIdx - l:prevCharIdx + 1
   let l:trigger = strpart(l:line, l:prevCharIdx, l:triggerLength)
 
@@ -1318,10 +1334,13 @@ function snipper#TriggerSnippet()
   return snipper#FigureOutWhatToReturn(l:placeHolderLength)
 endfunction
 
+" Brief: This function is called, via an autocmd, on the CursorMovedI event.
+" Its purpose is to, as the user is typing his text for tabstop a:tabStopNum,
+" put that text also in the passive tabstops of a:tabStopNum, if any.
+"
 " This function is also called when there is no place holder, so we go
 " directly to insert mode...
 function snipper#UpdateSnippet(tabStopNum)
-  echom "updating snippet for ts " . a:tabStopNum
   let l:charShift = 1
   let l:curCol = charcol(".")
   let l:insertedChar = ""
@@ -1335,20 +1354,26 @@ function snipper#UpdateSnippet(tabStopNum)
     " char. Hence, no need to update anything...
     return
   elseif exists("s:curCol") && l:curCol == s:curCol - 1
+    " User hit backspace in insert mode.
     let l:insertedCharIsBackspace = v:true
     let l:charShift = -1
-    echom "la la"
   else
+    " There may have been an actual character inserted in insert mode, or, if
+    " there is no placeholder for the current tabstop, and:
+    " - the user pressed <Tab> in insert mode when leaving the previous
+    "   tabstop
+    " - or, if a:tabStopNum = 1 (i.e. the current tabstop is the first), the
+    "   user pressed <Tab> in insert mode to expand the trigger.
+
     " strgetchar() returns a decimal number for char, which nr2char() converts
     " to a char proper.
     let l:insertedChar = nr2char(strgetchar(l:line, l:curCol-2))
-    echom "inserted char: " . l:insertedChar
   endif
   let s:curCol = l:curCol
 
-  " Now we that, if there was an actual char inserted, it was not a backspace.
-  " So check if there was actually a char inserted; if not, then there is
-  " nothing to do...
+  " Now we know that, if there was an actual char inserted, it was not a
+  " backspace. So check if there was actually a char inserted; if not, then
+  " there is nothing to do...
   if l:insertedCharIsBackspace == v:false && s:charActuallyInserted == v:false
     echomsg "There is no placeholder, so nothing to do..."
     return
@@ -1368,7 +1393,6 @@ function snipper#UpdateSnippet(tabStopNum)
   " Update active deps of current tabstop.
   for elem in s:tabStops[a:tabStopNum - 1][3]
     let s:tabStops[elem][1] += l:charShift
-    echom "foudasse... " . elem
   endfor
 
   for l:key in keys(s:groupedPassiveTabStopsList[a:tabStopNum - 1])
@@ -1429,7 +1453,7 @@ function snipper#UpdateState(idxForLine, idxForCursor)
   " Set autocmds for the tab stop we just finished processing, i.e.,
   " s:nextTabStopNum - 1. This way, as the user types his text, the
   " autocommands will update any (possible passive) tabstops that need to be
-  " update as a result of the text entered, for the current tabstop.
+  " updated as a result of the text entered, for the current tabstop.
   "   The reason this is done like this, instead of setting the autocmds for
   " s:nextTabStopNum, and then incrementing it, is that, if done like that,
   " when the autocmds are actually run, they will use the current value of
@@ -1466,8 +1490,4 @@ function snipper#UpdateState(idxForLine, idxForCursor)
   " or €, count as only character). Hence, this works even with snippets
   " containing non-ASCII characters.
   let s:cursorStartPos = s:snippetInsertionPos + a:idxForCursor
-endfunction
-
-function snipper#CharActuallyInserted()
-  let s:charActuallyInserted = v:true
 endfunction

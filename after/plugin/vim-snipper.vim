@@ -81,4 +81,4 @@ snoremap <silent> <S-Tab> va<C-r>=snipper#JumpToPreviousTabStop(0)<CR>
 
 nnoremap <silent> <C-s> :call snipper#SearchForTrigger()<CR>
 
-autocmd BufEnter * call snipper#checkNeedToBuildSnippetDict()
+autocmd BufEnter * call snipper#CheckNeedToBuildSnippetDict()
