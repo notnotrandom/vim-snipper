@@ -166,7 +166,13 @@ function snipper#BuildSnippetDict()
   endif
 endfunction
 
-" Brief: Triggered via an autocmd for the InsertCharPre event.
+" Brief: Triggered via an autocmd for the InsertCharPre event. This used
+" because function snipper#UpdateSnippet() is triggered when the cursor moves
+" in insert mode, which also happens when the cursor goes to a tabstop for
+" which there is no place holder, EVEN BEFORE THE USER TYPES ANYTHING (cf. the
+" comments in that function). Thus, again in that function, it is necessary to
+" know if it was called because an actual character was inserted or not (to
+" avoid making spurious updates). This is the purpose of this function.
 function snipper#CharActuallyInserted()
   let s:charActuallyInserted = v:true
 endfunction
@@ -903,9 +909,14 @@ endfunction
 " in, we use the s:lenghtOfLineWhereCursorWent variable (hack...)...
 "   The argument a:tabStopNum contains the placeholder number (in the above
 " example it would have been 1).
+"   This function is called via an autocmd on the InsertEnter event, which is
+" triggered when the user either deletes the place holder, or types something,
+" overwriting the place holder. In both cases he ends up in insert mode, which
+" implies an InsertEnter event.
 function snipper#RemovePlaceholders(tabStopNum)
   if s:lenghtOfLineWhereCursorWent == len(getline(s:snippetInsertionLineNum))
-    echomsg "User pressed <Tab>, so keeping placeholders in place..."
+    echomsg "snipper#RemovePlaceholders: User pressed <Tab>, so keeping" .
+          \ " placeholders in place..."
     return
   endif
 
@@ -1338,8 +1349,8 @@ endfunction
 " Its purpose is to, as the user is typing his text for tabstop a:tabStopNum,
 " put that text also in the passive tabstops of a:tabStopNum, if any.
 "
-" This function is also called when there is no place holder, so we go
-" directly to insert mode...
+" This function is also called when there is no place holder -- see the
+" explanation in the comments inside the function.
 function snipper#UpdateSnippet(tabStopNum)
   let l:charShift = 1
   let l:curCol = charcol(".")
@@ -1347,7 +1358,7 @@ function snipper#UpdateSnippet(tabStopNum)
   let l:insertedCharIsBackspace = v:false
   let l:line = getline(".")
 
-  " if curr snippet has no placeholders, s:curCol will be undefined.
+  " If current snippet has no placeholders, s:curCol will be undefined.
 
   if exists("s:curCol") && l:curCol == s:curCol
     " User deleted the placeholder with backspace or delete, inserting no
@@ -1358,12 +1369,16 @@ function snipper#UpdateSnippet(tabStopNum)
     let l:insertedCharIsBackspace = v:true
     let l:charShift = -1
   else
-    " There may have been an actual character inserted in insert mode, or, if
-    " there is no placeholder for the current tabstop, and:
-    " - the user pressed <Tab> in insert mode when leaving the previous
-    "   tabstop
-    " - or, if a:tabStopNum = 1 (i.e. the current tabstop is the first), the
-    "   user pressed <Tab> in insert mode to expand the trigger.
+    " Control gets here either when an actual character was inserted in insert
+    " mode, or when there is no placeholder for the current tabstop.
+    "
+    " About the second case: this is because before this tabstop, the user
+    " either expanded the trigger (insert mode), or jumped from a previous
+    " tabstop, WHICH IS ALWAYS DONE IN INSERT MODE, even when that previous
+    " tabstop has a placeholder, and user does not modify it (cf.  the map of
+    " function snipper#JumpToPreviousTabStop() in file
+    " after/plugin/vim-snipper.vim). So we always end up with a motion of
+    " cursor in insert mode, which triggers event CursorMovedI.
 
     " strgetchar() returns a decimal number for char, which nr2char() converts
     " to a char proper.
@@ -1371,11 +1386,12 @@ function snipper#UpdateSnippet(tabStopNum)
   endif
   let s:curCol = l:curCol
 
-  " Now we know that, if there was an actual char inserted, it was not a
-  " backspace. So check if there was actually a char inserted; if not, then
-  " there is nothing to do...
-  if l:insertedCharIsBackspace == v:false && s:charActuallyInserted == v:false
-    echomsg "There is no placeholder, so nothing to do..."
+  " Now we know that we have to update the snippet if either there was a
+  " character actually inserted, or if the user hit backspace in insert mode,
+  " deleting an actual character. The negated form of this condition thus
+  " tells us when there is nothing to do...
+  if s:charActuallyInserted == v:false && l:insertedCharIsBackspace == v:false
+    echomsg "snipper#UpdateSnippet: No character was inserted, so nothing to do..."
     return
   endif
   let s:charActuallyInserted = v:false
