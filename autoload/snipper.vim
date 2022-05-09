@@ -371,6 +371,10 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
   " currently on.
   let s:nextTabStopNum -= 1
 
+  " Set up <Esc> and <C-c> maps, in case the user decides to terminate the
+  " snippet processing.
+  call snipper#SetTraps(1)
+
   if a:comingFromInsertMode == 1
     " If this function is being called from insert mode, then the text for the
     " tabstop the user was just at, s:nextTabStopNum, may have been modified.
@@ -914,9 +918,10 @@ endfunction
 " overwriting the place holder. In both cases he ends up in insert mode, which
 " implies an InsertEnter event.
 function snipper#RemovePlaceholders(tabStopNum)
-  if s:lenghtOfLineWhereCursorWent == len(getline(s:snippetInsertionLineNum))
-    echomsg "snipper#RemovePlaceholders: User pressed <Tab>, so keeping" .
-          \ " placeholders in place..."
+  " if s:lenghtOfLineWhereCursorWent == len(getline(s:snippetInsertionLineNum))
+  if s:lenghtOfLineWhereCursorWent == len(getline("."))
+    echomsg "snipper#RemovePlaceholders: User pressed <Tab> or <S-Tab>, so " .
+          \ "keeping placeholders in place..."
     return
   endif
 
@@ -1028,7 +1033,7 @@ endfunction
 " hitting either <Esc>, or <Ctrl-c>. This function captures that event, and
 " call snipper#ClearState(), to remove state information. This clears the way
 " for a new snippet expansion to be processed.
-function snipper#SetTraps()
+function snipper#SetTraps(reverse = 0)
   inoremap <buffer><expr> <Esc> snipper#ClearState()
   inoremap <buffer><expr> <C-c> snipper#ClearState()
   snoremap <buffer><expr> <Esc> snipper#ClearState()
@@ -1047,10 +1052,20 @@ function snipper#SetTraps()
         \ = s:tabStops[0]
   let l:placeHolderEndsLine_b = v:false
 
-  " s:nextTabStopNum goes from 0 to 2.
+  " s:nextTabStopNum goes from 0 to 2. When control reaches here,
+  " s:nextTabStopNum has the number of the tabstop the user is currently at.
   if s:nextTabStopNum >= 2
-    let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
-          \ = s:tabStops[s:nextTabStopNum - 1] " index one less than trigger number!
+    " If we are cycling forward, then we want the data for the current
+    " tabstop, which has index s:nextTabStopNum.
+    if a:reverse == 0
+      let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
+            \ = s:tabStops[s:nextTabStopNum - 1]
+    else
+      " If we are cycling backwards, then the next tabstop is actually the
+      " one before the current one, which has index s:nextTabStopNum - 2.
+      let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:subsequent ]
+            \ = s:tabStops[s:nextTabStopNum - 2]
+    endif
   endif
 
   " Get line where the placeholder for the current tabstop was inserted.
@@ -1375,8 +1390,8 @@ function snipper#UpdateSnippet(tabStopNum)
     " About the second case: this is because before this tabstop, the user
     " either expanded the trigger (insert mode), or jumped from a previous
     " tabstop, WHICH IS ALWAYS DONE IN INSERT MODE, even when that previous
-    " tabstop has a placeholder, and user does not modify it (cf.  the map of
-    " function snipper#JumpToPreviousTabStop() in file
+    " tabstop has a placeholder, and the user does not modify it (cf.  the map
+    " of function snipper#JumpToPreviousTabStop() in file
     " after/plugin/vim-snipper.vim). So we always end up with a motion of
     " cursor in insert mode, which triggers event CursorMovedI.
 
