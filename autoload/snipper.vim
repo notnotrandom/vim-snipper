@@ -515,7 +515,7 @@ endfunction
 " Brief: This function sets the s:tabStops variable with the information for
 " the a:snip snippet. It also expands the snippet (see Return: below).
 "
-" Return: the snippet a:snip, as a string, with both ${1}, ${2}, etc., and $1,
+" Return: The snippet a:snip, as a string, with both ${1}, ${2}, etc., and $1,
 " $2, etc., replaced with their respective placeholders (or an empty string,
 " for tabstops without a placeholder).
 "
@@ -725,10 +725,9 @@ function snipper#ProcessSnippet(snip)
           " Replacing ${d} with an empty string removes 4 characters.
           let s:tabStops[idx][1] -= 4
         else
-          " Replacing ${d:foo} with foo remove 5 characters, and adds
-          " len(foo) = 3 characters. The length of the placeholder is in var
-          " l:placeHolderLength.
-          let s:tabStops[idx][1] += (l:placeHolderLength - 5)
+          " Replacing ${d:foo} with foo removes 5 characters (recall that
+          " tabstop numbers go from 1 to 9).
+          let s:tabStops[idx][1] -= 5
         endif
       endif
     endfor
