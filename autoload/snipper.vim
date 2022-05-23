@@ -1574,3 +1574,15 @@ function UpdateDependencies(tabStopNum, charShift)
     endfor
   endfor
 endfunction
+
+" --- Miscellaneous... sort of. ---
+
+" Brief: This function is borrowed from Michael Sanders' original snipMate.
+" Its function is to allow snippets to have access to the file name of the
+" file where the snippet is being expanded. Cf. cpp.snippets
+" XXX document this
+function! Filename(...)
+	let l:filename = expand('%:t:r')
+	if l:filename == '' | return a:0 == 2 ? a:2 : '' | endif
+	return !a:0 || a:1 == '' ? l:filename : substitute(a:1, '$1', l:filename, 'g')
+endfunction
