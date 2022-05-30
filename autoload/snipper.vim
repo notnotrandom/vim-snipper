@@ -316,9 +316,9 @@ function snipper#JumpToNextTabStop()
   " be able to type after this function has finished, by which time the
   " autocmds will be properly set.)
 
-  " Set up <Esc> and <C-c> maps, in case the user decides to terminate the
-  " snippet processing.
-  " call snipper#SetTraps()
+  " Set the traps for the processing of the current tabsop,
+  " ${s:nextTabStopNum}.
+  call snipper#SetTraps()
 
   " Grab the info the tabstop we just jumped to (its *index* is
   " s:nextTabStopNum - 1).
@@ -1032,6 +1032,9 @@ endfunction
 " hitting either <Esc>, or <Ctrl-c>. This function captures that event, and
 " call snipper#ClearState(), to remove state information. This clears the way
 " for a new snippet expansion to be processed.
+"   This function also remaps the backspace key, to either go do append or
+" insert afterwards, depending or whether the current placeholder ends the
+" line or not...
 function snipper#SetTraps(reverse = 0)
   inoremap <buffer><expr> <Esc> snipper#ClearState()
   inoremap <buffer><expr> <C-c> snipper#ClearState()
@@ -1077,6 +1080,8 @@ function snipper#SetTraps(reverse = 0)
   " the first placeholder char.) So the "b" is at col 2, and the placeholder
   " has length 2, and 2+2 = 4 = 3 + 1, where 3 is the length of the line, with
   " the placeholder in place.
+  " (Recall that s:snippetInsertionPos + l:idxForCursor == COLUMN of the first
+  " placeholder char.)
   if s:snippetInsertionPos + l:idxForCursor + l:placeHolderLength
         \ == strcharlen(l:line) + 1
     let l:placeHolderEndsLine_b = v:true
@@ -1133,10 +1138,6 @@ function snipper#TriggerSnippet()
     " text he wanted, and then hit <Tab>. And that brought him to the
     " current tabstop, viz., s:nextTabStopNum.
 
-    " So we set the traps for the processing of the current tabsop,
-    " ${s:nextTabStopNum}.
-    " call snipper#SetTraps()
-
     " Here s:nextTabStopNum is at least 2. We update l:placeHolderLength of the
     " tabstop the user is leaving...
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
@@ -1149,7 +1150,7 @@ function snipper#TriggerSnippet()
     let l:tabStopNumTheUserJustCameFrom = s:nextTabStopNum - 1
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[l:tabStopNumTheUserJustCameFrom - 1]
-    let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor) " length of the text the user entered at the placeholder he went back to
+    let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor) " length of the text the user entered at the placeholder he came from
     let s:tabStops[l:tabStopNumTheUserJustCameFrom - 1][2] = l:charShift
 
     " We also reset the "starting point" for the passive deps of
@@ -1167,7 +1168,10 @@ function snipper#TriggerSnippet()
     " s:nextTabStopNum - 1). This is needed for snipper#UpdateState().
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[s:nextTabStopNum - 1]
-    echom "idx for cursor " l:idxForCursor
+
+    " Set the traps for the processing of the current tabsop,
+    " ${s:nextTabStopNum}.
+    call snipper#SetTraps()
 
     " NOTA BENE: function snipper#UpdateState() increaments
     " s:nextTabStopNum, which is a part of the state that needs to be kept.
@@ -1531,21 +1535,17 @@ function snipper#UpdateState(idxForLine, idxForCursor)
 endfunction
 
 function UpdateDependencies(tabStopNum, charShift)
-  " echom "len char shift " . a:charShift
 
   let l:oldPlaceHolder = s:tabStops[a:tabStopNum - 1][2]
-  " echom "len of old placeholder " . s:tabStops[a:tabStopNum - 1][2]
 
-  " len of new "placeholder"
+  " Length of new "placeholder"
   let s:tabStops[a:tabStopNum - 1][2] = a:charShift 
 
   let l:shiftForDeps = a:charShift - l:oldPlaceHolder
 
   " Update active deps of current (active) tabstop.
   for elem in s:tabStops[a:tabStopNum - 1][3]
-    echom "before " . s:tabStops[elem][1]
     let s:tabStops[elem][1] += l:shiftForDeps
-    echom "after " . s:tabStops[elem][1]
   endfor
 
   " Update passive deps of current (active) tabstop, if any.
