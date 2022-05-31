@@ -261,10 +261,10 @@ function snipper#ClearState()
   " the user hits <Tab> -- but this function has to be called just the same
   " (to clear the rest of the state). Hence, silently ignore the error that
   " Vim throws when trying to unmap an unexisting map...
-  silent! iunmap <buffer><expr> <Esc>
+  " silent! iunmap <buffer><expr> <Esc>
   silent! iunmap <buffer><expr> <C-c>
 
-  sunmap <buffer><expr> <Esc>
+  " sunmap <buffer><expr> <Esc>
   sunmap <buffer><expr> <C-c>
 
   " See snipper#SetTraps() for the explanation for the mapping that this line
@@ -273,7 +273,7 @@ function snipper#ClearState()
 
   " echom "clearState() triggered..."
   if exists("#vimSnipperAutocmds")
-    " echom "about to delete vimSnipperAutocmds autocmds..."
+    echom "about to delete vimSnipperAutocmds autocmds..."
     autocmd! vimSnipperAutocmds
   endif
 
@@ -285,6 +285,7 @@ function snipper#ClearState()
 endfunction
 
 function snipper#FigureOutWhatToReturn(placeholder_length)
+  echom "snipper#FigureOutWhatToReturn place holder len " . a:placeholder_length
   " If the placeholder is empty, just return an empty string. If it is just
   " one char, then just "hit" v and go to select mode. Otherwise, as the
   " cursor will be left at the first char of the placeholder; to visually
@@ -292,10 +293,16 @@ function snipper#FigureOutWhatToReturn(placeholder_length)
   "   (Doing v0^G would cause for the visual selection to go to the
   " start of the line...)
   if a:placeholder_length == 0
-    return ""
+    " This trick closes the popup menu, if open. As the other cases all return
+    " <Esc>, if this one did not, that would force to close the menu
+    " explicitly elsewhere -- and those checks would need to ensure to NOT
+    " apply to cases where the next tabstop has a placeholder, because in
+    " those, the <Esc> key will close the popup menu automagically.
+    return "\<Esc>a"
   elseif a:placeholder_length == 1
     return "\<Esc>v"
   else " a:placeholder_length > 1
+    echom "ai caramba..."
     return "\<Esc>v" . (a:placeholder_length - 1) . "l"
   endif
 endfunction
@@ -355,8 +362,6 @@ function snipper#JumpToNextTabStop()
     autocmd InsertCharPre * call snipper#CharActuallyInserted()
     autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
     autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
-    " autocmd CompleteDone * call snipper#CompletionDetected(s:nextTabStopNum - 1)
-    " autocmd InsertLeave * call snipper#ClearState()
   augroup END
 
   call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
@@ -427,7 +432,6 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
     autocmd InsertCharPre * call snipper#CharActuallyInserted()
     autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
     autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
-    " autocmd CompleteDone * call snipper#CompletionDetected(s:nextTabStopNum - 1)
   augroup END
 
   " Finally, set up the cursor position for the tabstop where the users to go
@@ -932,11 +936,12 @@ endfunction
 " overwriting the place holder. In both cases he ends up in insert mode, which
 " implies an InsertEnter event.
 function snipper#RemovePlaceholders(tabStopNum)
-  echom "entering snipper#RemovePlaceholders..."
+  echom "entering snipper#RemovePlaceholders for ts num... " . a:tabStopNum
   " if s:lenghtOfLineWhereCursorWent == len(getline(s:snippetInsertionLineNum))
   if s:lenghtOfLineWhereCursorWent == len(getline("."))
-    echomsg "snipper#RemovePlaceholders: User pressed <Tab> or <S-Tab>, so " .
-          \ "keeping placeholders in place..."
+    " XXX debug var
+    " echomsg "snipper#RemovePlaceholders: User pressed <Tab> or <S-Tab>, so " .
+    "       \ "keeping placeholders in place..."
     return
   endif
 
@@ -1052,9 +1057,9 @@ endfunction
 " insert afterwards, depending or whether the current placeholder ends the
 " line or not...
 function snipper#SetTraps(reverse = 0)
-  inoremap <buffer><expr> <Esc> snipper#ClearState()
+  " inoremap <buffer><expr> <Esc> snipper#ClearState()
   inoremap <buffer><expr> <C-c> snipper#ClearState()
-  snoremap <buffer><expr> <Esc> snipper#ClearState()
+  " snoremap <buffer><expr> <Esc> snipper#ClearState()
   snoremap <buffer><expr> <C-c> snipper#ClearState()
 
   " Hereinafter, the only thing that is left to do, is map the <BS> in select
@@ -1130,6 +1135,12 @@ endfunction
 " former.
 function snipper#TriggerSnippet()
 
+  " The user just hit <Tab>, so disable all autocmd's, if any.
+  if exists("#vimSnipperAutocmds")
+    echom "about to delete vimSnipperAutocmds autocmds..."
+    autocmd! vimSnipperAutocmds
+  endif
+
   if s:nextTabStopNum != 0
     " If s:nextTabStopNum is not its default value (0), that means that either
     " ${s:nextTabStopNum - 1} or ${s:nextTabStopNum - 1:arg} exist, so now we
@@ -1138,18 +1149,12 @@ function snipper#TriggerSnippet()
     "   [len(s:tabStops) is the number (1-based) of the last tabstop in the
     " current snippet.]
 
-    " If completion was used, force it to end.
-    " call feedkeys("")
-    " call feedkeys("")
-
-    " To avoid the autocmd for completion is ts1 to be triggered when we are
-    " on ts2...
-    " if exists("#vimSnipperAutocmds")
-    "   autocmd! vimSnipperAutocmds
-    " endif
-
-    " Ugly hack to terminate the completion menu, if it is still shown.
-    if pumvisible() != 0 | call feedkeys("\<ESC>a") | endif
+    " If the user does a completion at a given tabstop, and then presses <Tab>
+    " to go the next tabstop, and that completion resulted in the popup menu
+    " being shown, then the user will be taken to the next tabstop -- but the
+    " popup menu won't go away. This is an ugly hack to hide the completion
+    " menu, in these kind of scenarios.
+    " if pumvisible() != 0 | call feedkeys("\<ESC>a") | endif
 
     if s:nextTabStopNum > len(s:tabStops)
       " There is no ${s:nextTabStopNum} tabstop, so first, clear the state.
@@ -1193,7 +1198,6 @@ function snipper#TriggerSnippet()
       " let s:tabStops[s:nextTabStopNum - 1][1] = l:idxForCursor
     endif
 
-
     " We also reset the "starting point" for the passive deps of
     " l:tabStopNumTheUserJustCameFrom
     for l:key in keys(s:groupedPassiveTabStopsList[l:tabStopNumTheUserJustCameFrom - 1])
@@ -1220,7 +1224,7 @@ function snipper#TriggerSnippet()
 
     call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
     return snipper#FigureOutWhatToReturn(l:placeHolderLength)
-  endif
+  endif " if s:nextTabStopNum != 0
 
   " If control reaches here, it means the user just entered a trigger and hit
   " <Tab>. So let us see if there is anything to process, or if we just have
@@ -1426,17 +1430,13 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
   let l:insertedCharIsBackspace = v:false
   let l:line = getline(".")
 
-  " This has to be here, because RemovePlaceholders() is not called when there
-  " are no placeholders... (the InsertEnter event never happens, because
-  " control never leaves insert mode to begin with...)
-  " if !hasmapto("snipper#ClearState()", "i")
-  "   inoremap <buffer><expr> <Esc> snipper#ClearState()
-  "   inoremap <buffer><expr> <C-c> snipper#ClearState()
-  " endif
-
-  " If current snippet has no placeholders, s:curCol will be undefined.
-
   if (a:text == '')
+    " If no a:text was supplied, that means this function was invoked via an
+    " autocmd on the InsertEnter event. So we have to detect whether a char
+    " was actually entered or deleted, or if the user just deleted the
+    " placeholder with backspace, etc.
+
+    " If current snippet has no placeholders, s:curCol will be undefined.
     if exists("s:curCol") && l:curCol == s:curCol
       " User deleted the placeholder with backspace or delete, inserting no
       " char. Hence, no need to update anything...
@@ -1572,9 +1572,7 @@ function snipper#UpdateState(idxForLine, idxForCursor)
     autocmd InsertCharPre * call snipper#CharActuallyInserted()
     autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
     autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
-    autocmd CompleteDonePre * call snipper#CompletionDetected(s:nextTabStopNum - 1)
   augroup END
-  echom "set autocmds for ts " . (s:nextTabStopNum - 1)
 
   " See comments for s:snippetLineIdx, in the top part of the file.
   let s:snippetLineIdx = a:idxForLine
@@ -1595,16 +1593,6 @@ function snipper#UpdateState(idxForLine, idxForCursor)
   " or €, count as only character). Hence, this works even with snippets
   " containing non-ASCII characters.
   let s:cursorStartPos = s:snippetInsertionPos + a:idxForCursor
-endfunction
-
-function snipper#CompletionDetected(tabStopNum)
-  echom "CompDetected curr tab stop num... " . a:tabStopNum
-  " echom "cur idx ... " . s:tabStops[a:tabStopNum - 1][1]
-  " echom "place holder len ... " . s:tabStops[a:tabStopNum - 1][2]
-  " echom "num of inserted chars" . s:numCharsInsertedCurrTabstop
-  " echoerr "FOOBAR"
-  " echom "cur cur col " . charcol(".") . " AND comp item " . string(complete_info())
-  " echom "cur cur col " . charcol(".") . " AND comp item " . string(v:completed_item)
 endfunction
 
 " --- Miscellaneous... sort of. ---
