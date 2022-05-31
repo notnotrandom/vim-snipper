@@ -59,8 +59,8 @@ else
 endif
 
 " Set the filetype for .snippets files. Set also the foldmethod to indent.
-au BufRead,BufNewFile *.snippets\= set ft=snippet
-au FileType snippet setl noet fdm=indent
+autocmd BufRead,BufNewFile *.snippets\= set ft=snippet
+autocmd FileType snippet setl noet fdm=indent
 
 inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
 inoremap <silent> <S-Tab> <C-r>=snipper#JumpToPreviousTabStop(1)<CR>
