@@ -62,8 +62,13 @@ endif
 autocmd BufRead,BufNewFile *.snippets\= set ft=snippet
 autocmd FileType snippet setl noet fdm=indent
 
-inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
-inoremap <silent> <S-Tab> <C-r>=snipper#JumpToPreviousTabStop(1)<CR>
+" If the user started a completion on the last word before going to the next
+" tabstop, <Space><BS> forces it to end.
+inoremap <silent> <Tab> <Space><BS><C-r>=snipper#TriggerSnippet()<CR>
+" inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
+
+inoremap <silent> <S-Tab> <Space><BS><C-r>=snipper#JumpToPreviousTabStop(1)<CR>
+" inoremap <silent> <S-Tab> <C-r>=snipper#JumpToPreviousTabStop(1)<CR>
 
 " This mapping for the scenario where the user decided to keep the
 " placeholder's text, and, with the placeholder text still selected, hits
