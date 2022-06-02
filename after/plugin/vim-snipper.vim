@@ -63,7 +63,8 @@ autocmd BufRead,BufNewFile *.snippets\= set ft=snippet
 autocmd FileType snippet setl noet fdm=indent
 
 " If the user started a completion on the last word before going to the next
-" tabstop, <Space><BS> forces it to end.
+" tabstop, <Space><BS> forces it to end. The <BS> DOES NOT trigger
+" snipper#UpdateSnippet()!!
 inoremap <silent> <Tab> <Space><BS><C-r>=snipper#TriggerSnippet()<CR>
 " inoremap <silent> <Tab> <C-r>=snipper#TriggerSnippet()<CR>
 
