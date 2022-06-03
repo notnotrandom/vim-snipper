@@ -26,10 +26,6 @@
 
 let s:charActuallyInserted = v:false
 
-" snipper#UpdateSnippet() gets called one time too many, when control enters
-" interst mode, but nothing is written (yet) by the user.
-let s:numCharsInsertedCurrTabstop = 0
-
 let s:compensatedForHiddenBS = v:true
 
 " Self-explanatory.
@@ -46,6 +42,10 @@ let g:snipper#snippetLinePattern = '\m^\t\zs.*\ze$'
 let g:snipper#triggerBoundaries = "$()[]{}<>*\"'"
 
 let s:lenghtOfLineWhereCursorWent = 0 " very ugly hack... :-(
+
+" snipper#UpdateSnippet() gets called one time too many, when control enters
+" insert mode, but nothing is written (yet) by the user.
+let s:numCharsInsertedCurrTabstop = 0
 
 " Key for dict s:passiveTabStops; to be used with nr2char().
 let s:passiveTabStopsStartNumHashKey = 97
@@ -180,7 +180,8 @@ endfunction
 " know if it was called because an actual character was inserted or not (to
 " avoid making spurious updates). This is the purpose of this function.
 function snipper#CharActuallyInserted()
-  echom "snipper#CharActuallyInserted (ts ".(s:nextTabStopNum - 1).") got char -->" . v:char . "<--"
+  if g:snipper_debug | echomsg "In function snipper#CharActuallyInserted()."
+        \ " Character inserted: -->" . v:char . "<--" | endif
   let s:charActuallyInserted = v:true
 endfunction
 
@@ -248,8 +249,7 @@ endfunction
 " function tests for.
 "
 function snipper#ClearState()
-  " XXX debug
-  " echom "clearState() triggered..."
+  if g:snipper_debug |echomsg "In function snipper#ClearState()... " | endif
 
   let s:compensatedForHiddenBS      = v:false
   let s:curCol                      = -1
@@ -296,7 +296,9 @@ function snipper#ClearStateCc()
 endfunction
 
 function snipper#FigureOutWhatToReturn(placeholder_length)
-  " echom "snipper#FigureOutWhatToReturn place holder len " . a:placeholder_length
+  if g:snipper_debug | echomsg "In function snipper#FigureOutWhatToReturn()... " | endif
+  if g:snipper_debug | echomsg "Argument a:placeholder_length: " . a:placeholder_length | endif
+
   " If the placeholder is empty, just return an empty string. If it is just
   " one char, then just "hit" v and go to select mode. Otherwise, as the
   " cursor will be left at the first char of the placeholder; to visually
@@ -376,7 +378,7 @@ function snipper#JumpToNextTabStop()
     autocmd!
     autocmd InsertCharPre * call snipper#CharActuallyInserted()
     autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
-    autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
+    autocmd CursorMovedI,TextChangedP * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
     autocmd CompleteDone * call snipper#CompletionDone(s:nextTabStopNum - 1)
   augroup END
 
@@ -431,7 +433,6 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
     " before this function being called.
     let l:line = getline(s:snippetInsertionLineNum + l:idxForLine)
     let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor)
-    echom "len of text just inserted: " . l:charShift
     let s:tabStops[s:nextTabStopNum - 1][2] = l:charShift
 
     " We also reset the "starting point" for the passive deps of same tabstop
@@ -460,7 +461,7 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
     autocmd!
     autocmd InsertCharPre * call snipper#CharActuallyInserted()
     autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
-    autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
+    autocmd CursorMovedI,TextChangedP * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
     autocmd CompleteDone * call snipper#CompletionDone(s:nextTabStopNum - 1)
   augroup END
 
@@ -966,13 +967,13 @@ endfunction
 " overwriting the place holder. In both cases he ends up in insert mode, which
 " implies an InsertEnter event.
 function snipper#RemovePlaceholders(tabStopNum)
-  " return
-  echom "entering snipper#RemovePlaceholders for ts num... " . a:tabStopNum
+  if g:snipper_debug | echomsg "In function snipper#RemovePlaceholders()... " | endif
+  if g:snipper_debug | echomsg "Argument a:tabStopNum: " . a:tabStopNum | endif
+
   " if s:lenghtOfLineWhereCursorWent == len(getline(s:snippetInsertionLineNum))
   if s:lenghtOfLineWhereCursorWent == len(getline("."))
-    " XXX debug var
-    echomsg "snipper#RemovePlaceholders: User pressed <Tab> or <S-Tab>, so " .
-          \ "keeping placeholders in place..."
+    if g:snipper_debug | echomsg "snipper#RemovePlaceholders(): " .
+          \ "User pressed <Tab> or <S-Tab>, so keeping placeholders in place..." | endif
     return
   endif
 
@@ -1180,13 +1181,6 @@ function snipper#TriggerSnippet()
     " s:nextTabStopNum.
     "   [len(s:tabStops) is the number (1-based) of the last tabstop in the
     " current snippet.]
-
-    " If the user does a completion at a given tabstop, and then presses <Tab>
-    " to go the next tabstop, and that completion resulted in the popup menu
-    " being shown, then the user will be taken to the next tabstop -- but the
-    " popup menu won't go away. This is an ugly hack to hide the completion
-    " menu, in these kind of scenarios.
-    " if pumvisible() != 0 | call feedkeys("\<ESC>a") | endif
 
     if s:nextTabStopNum > len(s:tabStops)
       " There is no ${s:nextTabStopNum} tabstop, so first, clear the state.
@@ -1438,8 +1432,10 @@ endfunction
 " This function is also called when there is no place holder -- see the
 " explanation in the comments inside the function.
 function snipper#UpdateSnippet(tabStopNum, text = '')
-  " return
-  echom "entering snipper#UpdateSnippet, for ts num " . a:tabStopNum . "..."
+  if g:snipper_debug | echomsg "In function snipper#UpdateSnippet()... " | endif
+  if g:snipper_debug | echomsg "Argument a:tabStopNum: " . a:tabStopNum | endif
+  if g:snipper_debug | echomsg "Argument a:text: " . a:text | endif
+
   let l:charShift = 1
   let l:curCol = charcol(".")
   let l:insertedChar = ""
@@ -1447,7 +1443,6 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
   let l:line = getline(".")
 
   if (a:text == '')
-    " echom "snipper#UpdateSnippet (ts " . a:tabStopNum . ") " . l:curCol
     " If no a:text was supplied, that means this function was invoked via an
     " autocmd on the InsertEnter event. So we have to detect whether a char
     " was actually entered or deleted, or if the user just deleted the
@@ -1456,7 +1451,9 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
     " If current tabstop has no placeholders, s:curCol will be undefined.
 
     if s:compensatedForHiddenBS == v:false
-      echomsg "snipper#UpdateSnippet: Compensating for the 'extra' <BS>..."
+      if g:snipper_debug | echomsg "snipper#UpdateSnippet(): " .
+            \ "Compensating for the 'extra' <BS>... " | endif
+
       let s:compensatedForHiddenBS = v:true
       return
     elseif exists("s:curCol") && l:curCol == s:curCol
@@ -1482,11 +1479,9 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
       " strgetchar() returns a decimal number for char, which nr2char() converts
       " to a char proper.
       let l:insertedChar = nr2char(strgetchar(l:line, l:curCol-2))
-      " echom "found 'inserted' char " . l:insertedChar
     endif
     let s:curCol = l:curCol
 
-    " echom "snipper#UpdateSnippet (ts ".a:tabStopNum.") char actually ins " . s:charActuallyInserted
     " Now we know that we have to update the snippet if either there was a
     " character actually inserted, or if the user hit backspace in insert mode,
     " deleting an actual character. The negated form of this condition thus
@@ -1504,11 +1499,6 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
   " Now we know for sure that there was character(s) either inserted, or
   " deleted. So save the compounding character shift.
   let s:numCharsInsertedCurrTabstop += l:charShift
-
-  echom "ins char text " . l:insertedChar
-
-  " for cycling back, maybe?
-  " let s:tabStops[a:tabStopNum - 1][1] += 1
 
   " Update passive deps of current tabstop, if any.
   if len(s:tabStops[a:tabStopNum - 1]) >= 4
@@ -1540,9 +1530,7 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
         let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1) .
               \ l:insertedChar .
               \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1)
-        " echom "snipper#UpdateSnippet (ts ".a:tabStopNum.") user did NOT enter BS..."
       else " User entered <BS>.
-        " echom "snipper#UpdateSnippet (ts ".a:tabStopNum.") user entered BS..."
         let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 2) .
               \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1)
       endif
@@ -1563,7 +1551,6 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
     " We have a finished new line; so added to the Dict of new lines to be
     " inserted into the file.
     call setline(l:lineNum, l:newLine)
-    " echom "snipper#UpdateSnippet (ts ".a:tabStopNum.") newline: " . l:newLine
   endfor " for l:key in keys(s:groupedPassiveTabStopsList[a:tabStopNum - 1])
 endfunction
 
@@ -1602,7 +1589,7 @@ function snipper#UpdateState(idxForLine, idxForCursor)
     autocmd!
     autocmd InsertCharPre * call snipper#CharActuallyInserted()
     autocmd InsertEnter * call snipper#RemovePlaceholders(s:nextTabStopNum - 1)
-    autocmd CursorMovedI * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
+    autocmd CursorMovedI,TextChangedP * call snipper#UpdateSnippet(s:nextTabStopNum - 1)
     autocmd CompleteDone * call snipper#CompletionDone(s:nextTabStopNum - 1)
   augroup END
 
