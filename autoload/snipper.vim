@@ -24,6 +24,8 @@
 "
 "************************************************************************
 
+" This variable is set to v:true on the InsertCharPre event. This is used by
+" the function UpdateSnippet() to detect the char the user just inserted.
 let s:charActuallyInserted = v:false
 
 " This variable is here to fix the following problem: when typing his text in
@@ -44,9 +46,28 @@ let s:charActuallyInserted = v:false
 "   After the user has finished typing his text at some tabstop, he will hit
 " <Tab> go to the next (or the previous) tabstop. If the destination tabstop
 " has a placeholder, then there is nothing to update, until the user starts
-" typing (see below XXX). But if there is no placeholder, then that means that
-" the motion of the cursor, from the old tabstop to the new one, will be done
-" in insert mode -- which triggers the function snipper#UpdateSnippet().
+" typing. But if there is no placeholder, then that means that the motion of
+" the cursor, from the old tabstop to the new one, will be done in insert mode
+" -- which triggers the function snipper#UpdateSnippet(), on the CursorMovedI
+"  event, BUT ONLY ONCE. It is the change of cursor position that triggers it,
+"  and not the <Space><BS> characters. The problem is that to
+" do its job of updating the snippet, UpdateSnippet() has to be able to find
+" the inserted character (if any), and for this it relies on a variable,
+" s:charActuallyInserted, which IS modified by the (function called on the)
+" InsertCharPre event -- and this event is triggered for the <Space>, but not
+" the <BS>.
+"   So what is the solution? Simple: to ensure that when UpdateSnippet() is
+" called on account of <Space>, it does nothing (i.e. it just returns). To
+" this end, I use the s:compensatedForHiddenBS variable: it is set to v:false
+" every time the user jumps tabstops, and when  UpdateSnippet() is called, and
+" the InsertCharPre event happened (s:charActuallyInserted == v:true), it
+" checks the value of s:compensatedForHiddenBS. If it is v:false, then the
+" InsertCharPre event corresponds to the artificial <Space>, and the function
+" just returns -- but not before setting the value of s:compensatedForHiddenBS
+" to v:true, so that it doesn't return when the user actually starts typing
+" characters. Then, when the user actually starts typing, this condition will
+" never again be true (in the current tabstop), so the function updates the
+" snippet normally...
 let s:compensatedForHiddenBS = v:none
 
 " Self-explanatory.
@@ -64,8 +85,11 @@ let g:snipper#triggerBoundaries = "$()[]{}<>*\"'"
 
 let s:lenghtOfLineWhereCursorWent = 0 " very ugly hack... :-(
 
-" snipper#UpdateSnippet() gets called one time too many, when control enters
-" insert mode, but nothing is written (yet) by the user.
+" This is used by snipper#UpdateSnippet() to keep track of the number of
+" characters actually typed by the user (it is decremented when the user hits
+" <BS>). This is done to be able to detect, when the user uses Vim's
+" completion mechanism, the string that said mechanism inserted -- to be able
+" to update any passive tabstops with it.
 let s:numCharsInsertedCurrTabstop = 0
 
 " Key for dict s:passiveTabStops; to be used with nr2char().
@@ -197,19 +221,13 @@ endfunction
 " because function snipper#UpdateSnippet() is triggered when the cursor moves
 " in insert mode, which also happens when the cursor goes to a tabstop for
 " which there is no place holder, EVEN BEFORE THE USER TYPES ANYTHING (cf. the
-" comments in that function). Thus, again in that function, it is necessary to
+" comments in that function, and comments for variable
+" s:compensatedForHiddenBS). Thus, again in that function, it is necessary to
 " know if it was called because an actual character was inserted or not (to
 " avoid making spurious updates). This is the purpose of this function.
 function snipper#CharActuallyInserted()
-  " if g:snipper_debug | echomsg "In function snipper#CharActuallyInserted()."
-        " \ " Character inserted: -->" . v:char . "<--" | endif
-  echomsg "In function snipper#CharActuallyInserted()."
-        \ " Character inserted: -->" . v:char . "<--"
-  " if s:compensatedForHiddenBS == v:false
-  "   echom "ts " . (s:nextTabStopNum - 1) . " compensating bs..."
-  "   let s:compensatedForHiddenBS = v:true
-  "   return
-  " endif
+  if g:snipper_debug | echomsg "In function snipper#CharActuallyInserted()."
+        \ " Character inserted: -->" . v:char . "<--" | endif
   let s:charActuallyInserted = v:true
 endfunction
 
@@ -1462,12 +1480,15 @@ endfunction
 " Its purpose is to, as the user is typing his text for tabstop a:tabStopNum,
 " put that text also in the passive tabstops of a:tabStopNum, if any.
 "
-" This function is also called when there is no place holder -- see the
-" explanation in the comments inside the function.
+" This function is also called when the user hits <Tab> to jump to another
+" tabstop (but NOT when he hits <Tab> to expand a snippet trigger). See the
+" comments for variable s:compensatedForHiddenBS.
+"
+" Param: a:tabStopNum, the tabstop number (not index) the user is going to.
+" Param: a:text, when provided the snippet is updated with the insertion of
+" this text, instead of just a character the user typed. This is used to
+" update the snippet with a string that comes via Vim's completion mechanism.
 function snipper#UpdateSnippet(tabStopNum, text = '')
-  " XXX this function is only called when jumping to a tab with no
-  " placeholder..
-  echom "ts " . a:tabStopNum . " UpdateSnippet..."
   if g:snipper_debug | echomsg "In function snipper#UpdateSnippet()... " | endif
   if g:snipper_debug | echomsg "Argument a:tabStopNum: " . a:tabStopNum | endif
   if g:snipper_debug | echomsg "Argument a:text: " . a:text | endif
@@ -1487,24 +1508,20 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
     " If current tabstop has no placeholders, s:curCol will be undefined.
 
     if s:charActuallyInserted == v:true && s:compensatedForHiddenBS == v:false
-      echom "ts " . a:tabStopNum . " compensating bs..."
-      " if g:snipper_debug | echomsg "snipper#UpdateSnippet(): " .
-      "       \ "Compensating for the 'extra' <BS>... " | endif
+      if g:snipper_debug | echomsg "snipper#UpdateSnippet(): " .
+            \ "Compensating for the 'extra' <BS>... " | endif
 
       let s:compensatedForHiddenBS = v:true
       return
     elseif exists("s:curCol") && l:curCol == s:curCol
-    " if exists("s:curCol") && l:curCol == s:curCol
-      echom "user deleted placeholder..."
-      " The current function is called after deleting the placeholder, only if
-      " that deletion leads to redrawing (setline()) of the line where that
-      " placeholder was...
-
-      " User deleted the placeholder with backspace or delete, inserting no
-      " char. Hence, no need to update anything...
+      " The current function (UpdateSnippet()) is called after deleting the
+      " placeholder, only if that deletion leads to redrawing (setline()) of
+      " the line where that placeholder was...
+      "   In such a scenario, when the user deleted the placeholder with
+      " backspace or delete, control ends up here. As there was no char
+      " inserted, there is, no need to update anything...
       return
     elseif exists("s:curCol") && l:curCol == s:curCol - 1
-      echom "User hit backspace in insert mode."
       " User hit backspace in insert mode.
       let l:insertedCharIsBackspace = v:true
       let l:charShift = -1
@@ -1523,7 +1540,6 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
       " strgetchar() returns a decimal number for char, which nr2char() converts
       " to a char proper.
       let l:insertedChar = nr2char(strgetchar(l:line, l:curCol-2))
-      echom "ins char found " . l:insertedChar
     endif
     let s:curCol = l:curCol
 
@@ -1597,7 +1613,6 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
     " inserted into the file.
     call setline(l:lineNum, l:newLine)
   endfor " for l:key in keys(s:groupedPassiveTabStopsList[a:tabStopNum - 1])
-  echom "--- snippetUpdate() end ---"
 endfunction
 
 " Brief: Takes care of updating state variables, except s:snippetInsertionPos,
@@ -1615,10 +1630,8 @@ function snipper#UpdateState(idxForLine, idxForCursor)
     let s:nextTabStopNum += 1
   endif
 
-  echom "setting compensatedForHiddenBS to false in UpdateState()"
   let s:compensatedForHiddenBS = v:false
 
-  " XXX
   let s:numCharsInsertedCurrTabstop = 0
 
   " Set autocmds for the tab stop we just finished processing, i.e.,
