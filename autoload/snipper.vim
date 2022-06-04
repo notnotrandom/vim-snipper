@@ -36,28 +36,18 @@ let s:charActuallyInserted = v:false
 "   In order to fix this, I map the <Tab> key in insert mode, to <Space><BS>,
 " before calling the function that moves the processing of the snippet onto
 " the next tabstop (cf. after/ftplugin/vim-snipper.vim). The problem is this:
-" the <Space> triggers the function snipper#UpdateSnippet() for the current
-" tabstop -- as it should -- BUT THE <BS> DOES NOT!!! Furthermore, on the
-" first time the user hits <Tab> (i.e., when the snippet is expanded), no
-" function gets called, because the autocmds for that have not yet been set.
-" It is to remedy both of this problems that this variable is here for.
-"   Starting with the former, without this variable, UpdateSnippet() will be
-" called for the <Space>, but not for the <BS> -- and the solution is to
-" check, in the function, the value of s:compensatedForHiddenBS. If it is
-" v:false, then we do nothing (other than setting it to v:true). This way, the
-" function does nothing for <Space>, then it is not called for <BS>, but for
-" the next character the user types, it will function as normal.
-"   But now we are faced with the following problem: the first time the user
-" hits <Tab> (which is always in insert mode, when triggering the snippet),
-" UpdateSnippet() is not called, either for <Space> or for <BS>, because the
-" autocmds have not been set yet -- and so, for tabstop 1, the function must
-" work normally. (Otherwise, if ${1} has passive tabstops ($1), the first
-" character the user types will not be placed in the passive tabstops.) This
-" is to say, it must work as if s:compensatedForHiddenBS had already been set
-" to v:true. This is fixed by setting the initial value of said variable to
-" v:true. When jumping to the next (or previous) tabstop, the value is reset,
-" but this time to v:false (because all autocmds will be in place).
-let s:compensatedForHiddenBS = v:true
+" the <Space> triggers the event InsertCharPre, which screws up the
+" processing! (This does NOT happen on the first time the user
+" hits <Tab> (i.e., when the snippet is expanded), because the autocmd for
+" that has not yet been set -- but this causes no problems). It is to remedy
+" this problem that this variable is here for.
+"   After the user has finished typing his text at some tabstop, he will hit
+" <Tab> go to the next (or the previous) tabstop. If the destination tabstop
+" has a placeholder, then there is nothing to update, until the user starts
+" typing (see below XXX). But if there is no placeholder, then that means that
+" the motion of the cursor, from the old tabstop to the new one, will be done
+" in insert mode -- which triggers the function snipper#UpdateSnippet().
+let s:compensatedForHiddenBS = v:none
 
 " Self-explanatory.
 let g:snipper#commentLinePattern = '\m^#'
