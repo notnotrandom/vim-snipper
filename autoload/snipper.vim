@@ -31,15 +31,15 @@ let s:charActuallyInserted = v:false
 " This variable is here to fix the following problem: when typing his text in
 " a given tabstop, the user might use Vim's completion feature. This causes
 " the problem of how to detect that completion has finished, because while
-" there is events for that, if the user chooses his completion, and this hits
+" there is events for that, if the user chooses his completion, and then hits
 " <Tab> (to go to the next tabstop), the events signalling completion will be
 " triggered too late -- namely, when the user is already on the next tabstop.
 " This is no good.
 "   In order to fix this, I map the <Tab> key in insert mode, to <Space><BS>,
 " before calling the function that moves the processing of the snippet onto
 " the next tabstop (cf. after/ftplugin/vim-snipper.vim). The problem is this:
-" the <Space> triggers the event InsertCharPre, which screws up the
-" processing! (This does NOT happen on the first time the user
+" the <Space> triggers the event InsertCharPre, but the <BS> does NOT -- which
+" screws up the processing! (This does NOT happen on the first time the user
 " hits <Tab> (i.e., when the snippet is expanded), because the autocmd for
 " that has not yet been set -- but this causes no problems). It is to remedy
 " this problem that this variable is here for.
@@ -57,17 +57,26 @@ let s:charActuallyInserted = v:false
 " InsertCharPre event -- and this event is triggered for the <Space>, but not
 " the <BS>.
 "   So what is the solution? Simple: to ensure that when UpdateSnippet() is
-" called on account of <Space>, it does nothing (i.e. it just returns). To
-" this end, I use the s:compensatedForHiddenBS variable: it is set to v:false
-" every time the user jumps tabstops, and when  UpdateSnippet() is called, and
-" the InsertCharPre event happened (s:charActuallyInserted == v:true), it
-" checks the value of s:compensatedForHiddenBS. If it is v:false, then the
-" InsertCharPre event corresponds to the artificial <Space>, and the function
-" just returns -- but not before setting the value of s:compensatedForHiddenBS
-" to v:true, so that it doesn't return when the user actually starts typing
-" characters. Then, when the user actually starts typing, this condition will
-" never again be true (in the current tabstop), so the function updates the
-" snippet normally...
+" called on entering the new tabstop in insert mode, it does nothing (i.e. it
+" just returns). To this end, I use the s:compensatedForHiddenBS variable: it
+" is set to v:false every time the user jumps tabstops, and when
+" UpdateSnippet() is called, and the InsertCharPre event happened
+" (s:charActuallyInserted == v:true), it checks the value of
+" s:compensatedForHiddenBS. If it is v:false, then the InsertCharPre event
+" corresponds to the artificial <Space>, and the function just returns -- but
+" not before setting the value of s:compensatedForHiddenBS to v:true, so that
+" it doesn't simply returns when the user actually starts typing characters.
+" Then, when the user actually starts typing, this condition will never again
+" be true (in the current tabstop), so the function updates the snippet
+" normally...
+"   But if the tabstop the user jumps to has a placeholder, then the function
+" UpdateSnippet() is NOT called, until the user actually types something, or
+" deletes the placeholder. Both of these cases can be well handled by the
+" UpdateSnippet(), without the extraneous condition introduced above. Hence,
+" the function that is called when the placeholder is removed either by typing
+" or by <BS>, RemovePlaceholders() -- which is called *before* UpdateSnippet()
+" -- sets s:compensatedForHiddenBS to v:true. In this way, said extraneous
+" condition is never triggered.
 let s:compensatedForHiddenBS = v:none
 
 " Self-explanatory.
