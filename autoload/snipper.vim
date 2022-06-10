@@ -323,10 +323,10 @@ function snipper#ClearState()
   " the user hits <Tab> -- but this function has to be called just the same
   " (to clear the rest of the state). Hence, silently ignore the error that
   " Vim throws when trying to unmap an unexisting map...
-  " silent! iunmap <buffer><expr> <Esc>
+  silent! iunmap <buffer><expr> <Esc>
   silent! iunmap <buffer><expr> <C-c>
 
-  " sunmap <buffer><expr> <Esc>
+  sunmap <buffer><expr> <Esc>
   sunmap <buffer><expr> <C-c>
 
   " See snipper#SetTraps() for the explanation for the mapping that this line
@@ -1151,9 +1151,9 @@ endfunction
 " insert afterwards, depending or whether the current placeholder ends the
 " line or not...
 function snipper#SetTraps(reverse = 0)
-  " inoremap <buffer><expr> <Esc> snipper#ClearState()
+  inoremap <buffer><expr> <Esc> snipper#ClearState()
   inoremap <buffer><silent> <C-c> <Esc>:call snipper#ClearStateCc()<CR>
-  " snoremap <buffer><expr> <Esc> snipper#ClearState()
+  snoremap <buffer><expr> <Esc> snipper#ClearState()
   snoremap <buffer><silent> <C-c> <Esc>:call snipper#ClearStateCc()<CR>
 
   " Hereinafter, the only thing that is left to do, is map the <BS> in select
