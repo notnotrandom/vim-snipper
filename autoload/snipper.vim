@@ -77,7 +77,7 @@ let s:charActuallyInserted = v:false
 " or by <BS>, RemovePlaceholders() -- which is called *before* UpdateSnippet()
 " -- sets s:compensatedForHiddenBS to v:true. In this way, said extraneous
 " condition is never triggered.
-let s:compensatedForHiddenBS = v:none
+let s:compensatedForHiddenBS = v:false
 
 " Self-explanatory.
 let g:snipper#commentLinePattern = '\m^#'
@@ -1037,10 +1037,9 @@ function snipper#RemovePlaceholders(tabStopNum)
     return
   endif
 
-  let s:compensatedForHiddenBS = v:true
-
   " Otherwise, user either hit <BS>, deleting the placeholder, or typed
   " something (overwriting the placeholder).
+  let s:compensatedForHiddenBS = v:true
 
   " This is not a part of the state. It is just to keep tabs on the cursor
   " position, so as to be able to detect, in function snipper#UpdateSnippet(),
@@ -1629,17 +1628,26 @@ endfunction
 " that).
 function snipper#UpdateState(idxForLine, idxForCursor)
   if s:nextTabStopNum == 0
+    " We are jumping to the first tabstop, just after the user has expanded
+    " the snippet.
     let s:nextTabStopNum = 2
-    " let s:compensatedForHiddenBS = v:true
+
+    " As we are jumping to the first tabstop, just after the user has expanded
+    " the snippet, set s:compensatedForHiddenBS to true. Why? Because if there
+    " is a placeholder, then this variable will be set to false when
+    " RemovePlaceholders() is called. But if there is NOT a placeholder, then,
+    " because the first <Tab> map does not have a <Space><BS> associated with
+    " (cf. after/ftplugin/vim-snipper.vim), then there is no <BS> to
+    " compensate. Or in other words, it is "automagically compensated for" --
+    " so set the variable to v:true.
+    let s:compensatedForHiddenBS = v:true
   else
-    " let s:compensatedForHiddenBS = v:false
     " It should not be necessary here to check that s:nextTabStopNum only goes
     " up to 9, because function snipper#ProcessSnippet() already checks for
     " this.
     let s:nextTabStopNum += 1
+    let s:compensatedForHiddenBS = v:false
   endif
-
-  let s:compensatedForHiddenBS = v:false
 
   let s:numCharsInsertedCurrTabstop = 0
 
