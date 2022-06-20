@@ -306,6 +306,7 @@ endfunction
 function snipper#ClearState()
   if g:snipper_debug |echomsg "In function snipper#ClearState()... " | endif
 
+  let s:charActuallyInserted        = v:false
   let s:compensatedForHiddenBS      = v:false
   let s:curCol                      = -1
   let s:cursorStartPos              = -1
@@ -1249,7 +1250,6 @@ function snipper#TriggerSnippet()
       call snipper#ClearState()
 
       let l:ret = snipper#TriggerSnippet()
-      echo "what fuck: " . l:ret
       return l:ret
     endif
 
