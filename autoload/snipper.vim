@@ -450,6 +450,18 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
     return ""
   endif
 
+  " This variable is needed because if the user is already at tabstop 1, and
+  " wants to go back, we simulate this as if he was actually coming from
+  " tabstop 2. However, in this case, the updates of placeholder length and
+  " passive deps (if any) should be done to the tabstop the user actually came
+  " from (ts 1).
+  "   If the user actually came from ts 2, then s:nextTabStopNum would be 3,
+  " so we could decrement it by one, and use that value (2) as the tabstop
+  " number the user actually came from. But this does not work when we just
+  " simulate he came from ts 2 -- so I use this variable to record the actual
+  " tabstop number where the use came from.
+  let l:tabStopNumUserCameFrom = v:none
+
   " The user just hit <Tab>, so disable all autocmd's, if any.
   if exists("#vimSnipperAutocmds")
     autocmd! vimSnipperAutocmds
@@ -462,6 +474,11 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
     " s:nextTabStopNum = 3) -- and let the remainder of this function carry
     " him "back" to tabstop 1.
     let s:nextTabStopNum = 3
+    let l:tabStopNumUserCameFrom = 1
+  else
+    " No need to simulate anything, so the ts number the user just came from
+    " is actually s:nextTabStopNum - 1.
+    let l:tabStopNumUserCameFrom = s:nextTabStopNum - 1
   endif
 
   " If we want to make the tabstop before the one the user is currently on,
@@ -483,37 +500,31 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
     " mode, as done for tabstops without a placeholder).
     "   Recall that here s:nextTabStopNum is at least 2.
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
-          \ s:tabStops[s:nextTabStopNum - 1]
+          \ s:tabStops[l:tabStopNumUserCameFrom - 1]
 
     " Length of the text the user entered at the tabstop he was just at,
     " before this function being called.
     let l:line = getline(s:snippetInsertionLineNum + l:idxForLine)
     let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor)
-    let s:tabStops[s:nextTabStopNum - 1][2] = l:charShift
+    let s:tabStops[l:tabStopNumUserCameFrom - 1][2] = l:charShift
 
     " We also reset the "starting point" for the passive deps of same tabstop
     " (the one the was just at before this function being called). This is
     " needed because for passive deps, the starting point is increased by 1,
     " for each typed character (cf. snipper#UpdateSnippet()). But here, we
     " need to make that starting point go back, as many chars as the ones the
-    " user inserted -- i.e., as many chars as the place holder has.
+    " user inserted -- i.e., as many chars as the placeholder has.
     for l:key in keys(s:groupedPassiveTabStopsList[s:nextTabStopNum - 1])
       let l:pTabStopsInCurrLine_l =
-            \ s:groupedPassiveTabStopsList[s:nextTabStopNum - 1][l:key]
+            \ s:groupedPassiveTabStopsList[l:tabStopNumUserCameFrom - 1][l:key]
 
       for idx in range(len(l:pTabStopsInCurrLine_l))
         let s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1] -= l:charShift
       endfor
     endfor
-
-    " let s:compensatedForHiddenBS = v:false
-  else
-    " Coming from select mode, so <Space><BS> inserted before calling
-    " function...
-    " let s:compensatedForHiddenBS = v:true
   endif " if a:comingFromInsertMode == 1
 
-  " See snipper#UpdateState() for the role of this function.
+  " See snipper#UpdateState() for the role of this variable.
   let s:numCharsInsertedCurrTabstop = 0
 
   let s:compensatedForHiddenBS = v:false
@@ -526,8 +537,8 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
     autocmd CompleteDone * call snipper#CompletionDone(s:nextTabStopNum - 1)
   augroup END
 
-  " Finally, set up the cursor position for the tabstop where the users to go
-  " to -- which has index s:nextTabStopNum - 2.
+  " Finally, set up the cursor position for the tabstop where the user is to
+  " go to -- which has index s:nextTabStopNum - 2.
   let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
         \ s:tabStops[s:nextTabStopNum - 2]
   let s:snippetLineIdx = l:idxForLine
