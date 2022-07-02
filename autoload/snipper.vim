@@ -414,7 +414,8 @@ function snipper#JumpToNextTabStop()
 
   " Update the cursor start line and column position for the current snippet.
   let s:snippetLineIdx = l:idxForLine
-  let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
+  let l:currLineInsertionPos = snipper#OffsetForCurrLine(l:idxForLine)
+  let s:cursorStartPos = l:currLineInsertionPos + l:idxForCursor
 
   " Before finishing, increment the tabstop number. (The only update of this
   " variable that does *not* increment it by one, is when it is 0 (in which
@@ -505,7 +506,8 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
     " Length of the text the user entered at the tabstop he was just at,
     " before this function being called.
     let l:line = getline(s:snippetInsertionLineNum + l:idxForLine)
-    let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor)
+    let l:currLineInsertionPos = snipper#OffsetForCurrLine(l:idxForLine)
+    let l:charShift = charcol(".") - (l:currLineInsertionPos + l:idxForCursor)
     let s:tabStops[l:tabStopNumUserCameFrom - 1][2] = l:charShift
 
     " We also reset the "starting point" for the passive deps of same tabstop
@@ -542,10 +544,29 @@ function snipper#JumpToPreviousTabStop(comingFromInsertMode)
   let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
         \ s:tabStops[s:nextTabStopNum - 2]
   let s:snippetLineIdx = l:idxForLine
-  let s:cursorStartPos = s:snippetInsertionPos + l:idxForCursor
+  let l:currLineInsertionPos = snipper#OffsetForCurrLine(l:idxForLine)
+  let s:cursorStartPos = l:currLineInsertionPos + l:idxForCursor
 
   call snipper#SetCursorPosBeforeReturning(l:placeHolderLength)
   return snipper#FigureOutWhatToReturn(l:placeHolderLength)
+endfunction
+
+" Brief: Consider a snippet with more than one line, inserted in the middle of
+" an existing line. The first line of the snippet will be inserted at the
+" column where the trigger started (cf. s:snippetInsertionPos) -- but all the
+" remaining lines WILL BE INSERTED AT COLUMN 1. This means that many
+" calculations done throughout this plugin (e.g. updating the positions of
+" passive tabstops) must be done using col. position 1, rather than the value
+" in s:snippetInsertionPos, if they concern any snippet line other than the
+" first. This is the purpose of this function. It is very simple, but it
+" avoids having this if-condition spread out in the many places where those
+" calculations take place.
+function snipper#OffsetForCurrLine(lineIdx)
+  if a:lineIdx == 0
+    return s:snippetInsertionPos
+  else
+    return 1
+  endif
 endfunction
 
 function snipper#ParseSnippetFile(snipFile, filetype)
@@ -1074,6 +1095,8 @@ function snipper#RemovePlaceholders(tabStopNum)
     let l:lineNum = l:key + s:snippetInsertionLineNum
     let l:lineOriginal = getline(l:lineNum)
 
+    let l:currLineInsertionPos = snipper#OffsetForCurrLine(l:key)
+
     " Names of passive TS, e.g., a, b, etc., already sorted (ascending).
     let l:pTabStopsInCurrLine_l =
           \ s:groupedPassiveTabStopsList[a:tabStopNum - 1][l:key]
@@ -1085,8 +1108,8 @@ function snipper#RemovePlaceholders(tabStopNum)
       let l:idxOfCurrPassiveTS =
             \ s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1]
 
-      let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1) .
-            \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS + l:placeholderLen - 1)
+      let l:newLine = slice(l:newLine, 0, l:currLineInsertionPos + l:idxOfCurrPassiveTS - 1) .
+            \ slice(l:newLine, l:currLineInsertionPos + l:idxOfCurrPassiveTS + l:placeholderLen - 1)
 
       " Update passive deps of the passive tabstop we just got rid of.
       for elem in s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][3]
@@ -1202,13 +1225,12 @@ function snipper#SetTraps(reverse = 0)
   " The below if-cond checks if the placeholder is the last (rightmost) text
   " of the line. To see why it is computed like this, imagine a line "abc",
   " where "bc" is the placeholder.
-  "   (Recall that s:snippetInsertionPos + l:idxForCursor yields the COLUMN of
-  " the first placeholder char.) So the "b" is at col 2, and the placeholder
-  " has length 2, and 2+2 = 4 = 3 + 1, where 3 is the length of the line, with
-  " the placeholder in place.
-  " (Recall that s:snippetInsertionPos + l:idxForCursor == COLUMN of the first
-  " placeholder char.)
-  if s:snippetInsertionPos + l:idxForCursor + l:placeHolderLength
+  "   (Recall that l:currLineInsertionPos + l:idxForCursor yields the COLUMN
+  " of the first placeholder char.) So the "b" is at col 2, and the
+  " placeholder has length 2, and 2+2 = 4 = 3 + 1, where 3 is the length of
+  " the line, with the placeholder in place.
+  let l:currLineInsertionPos = snipper#OffsetForCurrLine(l:idxForLine)
+  if l:currLineInsertionPos + l:idxForCursor + l:placeHolderLength
         \ == strcharlen(l:line) + 1
     let l:placeHolderEndsLine_b = v:true
   endif
@@ -1274,7 +1296,12 @@ function snipper#TriggerSnippet()
     let l:tabStopNumTheUserJustCameFrom = s:nextTabStopNum - 1
     let [ l:idxForLine, l:idxForCursor, l:placeHolderLength ; l:whatever_notNeeded ] =
           \ s:tabStops[l:tabStopNumTheUserJustCameFrom - 1]
-    let l:charShift = charcol(".") - (s:snippetInsertionPos + l:idxForCursor) " length of the text the user entered at the placeholder he came from
+
+    " l:charShift is the length of the text the user entered at the
+    " placeholder he came from.
+    let l:currLineInsertionPos = snipper#OffsetForCurrLine(l:idxForLine)
+    let l:charShift = charcol(".") - (l:currLineInsertionPos + l:idxForCursor)
+
     let s:tabStops[l:tabStopNumTheUserJustCameFrom - 1][2] = l:charShift
 
     " We also reset the "starting point" for the passive deps of
@@ -1593,8 +1620,12 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
   endfor
 
   for l:key in keys(s:groupedPassiveTabStopsList[a:tabStopNum - 1])
+    " l:key contains the line index (in the snippet) of the line where the
+    " current passive tabstops of a:tabStopNum are.
     let l:lineNum = l:key + s:snippetInsertionLineNum
     let l:lineOriginal = getline(l:lineNum)
+
+    let l:currLineInsertionPos = snipper#OffsetForCurrLine(l:key)
 
     " Names of passive TS, e.g., a, b, etc., already sorted (ascending).
     let l:pTabStopsInCurrLine_l =
@@ -1607,12 +1638,12 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
             \ s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1]
 
       if l:insertedCharIsBackspace == v:false
-        let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1) .
+        let l:newLine = slice(l:newLine, 0, l:currLineInsertionPos + l:idxOfCurrPassiveTS - 1) .
               \ l:insertedChar .
-              \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1)
+              \ slice(l:newLine, l:currLineInsertionPos + l:idxOfCurrPassiveTS - 1)
       else " User entered <BS>.
-        let l:newLine = slice(l:newLine, 0, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 2) .
-              \ slice(l:newLine, s:snippetInsertionPos + l:idxOfCurrPassiveTS - 1)
+        let l:newLine = slice(l:newLine, 0, l:currLineInsertionPos + l:idxOfCurrPassiveTS - 2) .
+              \ slice(l:newLine, l:currLineInsertionPos + l:idxOfCurrPassiveTS - 1)
       endif
 
       let s:passiveTabStops[l:pTabStopsInCurrLine_l[idx]][1] += l:charShift
@@ -1634,9 +1665,9 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
   endfor " for l:key in keys(s:groupedPassiveTabStopsList[a:tabStopNum - 1])
 endfunction
 
-" Brief: Takes care of updating state variables, except s:snippetInsertionPos,
-" the value of which is only set once (and hence, no needed for updates after
-" that).
+" Brief: Takes care of updating the required state variables (keep in mind
+" that there are NOT all state variable, because some are only set once, and
+" hence need no updating).
 function snipper#UpdateState(idxForLine, idxForCursor)
   if s:nextTabStopNum == 0
     " We are jumping to the first tabstop, just after the user has expanded
@@ -1689,10 +1720,10 @@ function snipper#UpdateState(idxForLine, idxForCursor)
 
   " The column (char-based) at which the cursor is placed after the processing
   " of the ${1:arg} tabstop. I.e., the column of the dollar sign.
-  "   As explained in comments of the line where it is set, the variable
-  " s:snippetInsertionPos contains the column at which the snippet text
-  " starts. Now l:idxForCursor contains the char-based, 0-based, index of the
-  " $ sign. For example, suppose you have a snippet like so (sans quotes):
+  "   The variable l:currLineInsertionPos contains the column at which the
+  " current snippet line starts (cf. function snipper#OffsetForCurrLine()).
+  "   Now l:idxForCursor contains the char-based, 0-based, index of the $
+  " sign. For example, suppose you have a snippet like so (sans quotes):
   " "\label{${1:arg}}". Then, for the first tabstop, l:idxForCursor will be 7.
   " If this snippet is to be inserted in the first column, then
   " s:cursorStartPos is 8. If on the second column, it is 9, and so on. Hence
@@ -1702,7 +1733,8 @@ function snipper#UpdateState(idxForLine, idxForCursor)
   " functions that count characters, not bytes (composite characters, e.g. ã,
   " or €, count as only character). Hence, this works even with snippets
   " containing non-ASCII characters.
-  let s:cursorStartPos = s:snippetInsertionPos + a:idxForCursor
+  let l:currLineInsertionPos = snipper#OffsetForCurrLine(a:idxForLine)
+  let s:cursorStartPos = l:currLineInsertionPos + a:idxForCursor
 endfunction
 
 function snipper#CompletionDone(tabStopNum)
@@ -1710,8 +1742,9 @@ function snipper#CompletionDone(tabStopNum)
         \ s:tabStops[a:tabStopNum - 1]
   let l:curLine = getline(".")
   let l:curEndPos = charcol(".") " Cursor column when CompleteDone triggered.
+  let l:currLineInsertionPos = snipper#OffsetForCurrLine(l:idxForLine)
 
-  let l:newPlaceHolder = slice(l:curLine, s:snippetInsertionPos + l:idxForCursor - 1
+  let l:newPlaceHolder = slice(l:curLine, l:currLineInsertionPos + l:idxForCursor - 1
         \ + s:numCharsInsertedCurrTabstop, l:curEndPos - 1)
 
   " Now update them with l:newPlaceHolder.
