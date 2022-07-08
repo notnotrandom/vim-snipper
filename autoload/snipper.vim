@@ -171,8 +171,11 @@ let s:nextTabStopNum = 0
 " If there are no passive tabstops, this is empty.
 let s:passiveTabStops = {}
 
-" Line number where the trigger was entered. It will contain the first line of
-" the snippet.
+" The indent level of the snippet insertion line.
+let s:snippetInsertionLineIndent = -1
+
+" Line number where the trigger was entered. It is the line which will contain
+" the first line of the snippet.
 let s:snippetInsertionLineNum = -1
 
 " Column number (char based), where the trigger started. Will be the start of
@@ -314,8 +317,9 @@ function snipper#ClearState()
   let s:nextTabStopNum              = 0
   let s:numCharsInsertedCurrTabstop = 0
   let s:passiveTabStops             = {}
-  let s:snippetInsertionPos         = -1
+  let s:snippetInsertionLineIndent  = -1
   let s:snippetInsertionLineNum     = -1
+  let s:snippetInsertionPos         = -1
   let s:snippetLineIdx              = -1
   let s:tabStops                    = []
 
@@ -554,18 +558,20 @@ endfunction
 " Brief: Consider a snippet with more than one line, inserted in the middle of
 " an existing line. The first line of the snippet will be inserted at the
 " column where the trigger started (cf. s:snippetInsertionPos) -- but all the
-" remaining lines WILL BE INSERTED AT COLUMN 1. This means that many
-" calculations done throughout this plugin (e.g. updating the positions of
-" passive tabstops) must be done using col. position 1, rather than the value
-" in s:snippetInsertionPos, if they concern any snippet line other than the
-" first. This is the purpose of this function. It is very simple, but it
-" avoids having this if-condition spread out in the many places where those
-" calculations take place.
+" remaining lines will be inserted at column "indent level of line where
+" trigger was entered plus one". This indent value is stored in variable
+" s:snippetInsertionLineIndent. This means that many calculations done
+" throughout this plugin (e.g. updating the positions of passive tabstops)
+" must be done using col. position s:snippetInsertionLineIndent + 1, rather
+" than the value in s:snippetInsertionPos, if they concern any snippet line
+" other than the first. This is the purpose of this function. It is very
+" simple, but it avoids having this if-condition spread out in the many places
+" where those calculations take place.
 function snipper#OffsetForCurrLine(lineIdx)
   if a:lineIdx == 0
     return s:snippetInsertionPos
   else
-    return 1
+    return s:snippetInsertionLineIndent + 1
   endif
 endfunction
 
@@ -1497,6 +1503,9 @@ function snipper#TriggerSnippet()
   " Like s:snippetInsertionPos, this var (s:snippetInsertionLineNum) is only
   " set once.
   let s:snippetInsertionLineNum = l:currLineNum
+
+  " Also set only once.
+  let s:snippetInsertionLineIndent = indent(s:snippetInsertionLineNum)
 
   " l:idxForCursor contains the array index (0-based) of the position of the
   " '$' in ${1:arg}, in the expanded snippet. l:placeHolderLength is the
