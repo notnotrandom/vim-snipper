@@ -1764,10 +1764,28 @@ endfunction
 
 " Brief: This function is borrowed from Michael Sanders' original snipMate.
 " Its function is to allow snippets to have access to the file name of the
-" file where the snippet is being expanded. Cf. cpp.snippets
-" XXX document this
+" file where the snippet is being expanded. I quote verbatim from
+" https://github.com/msanders/snipmate.vim/blob/master/doc/snipMate.txt:
+"
+" «With no arguments, the default filename [i.e. the name of the current file]
+" without an extension is returned; the first argument specifies what to place
+" before or after the filename, and the second argument supplies the default
+" text to be used if the file has not been named. "$1" in the first argument
+" is replaced with the filename; if you only want the filename to be returned,
+" the first argument can be left blank.»
+"
 function Filename(...)
+  " Get name of current file: no path components (:t), and without extension
+  " (:r).
 	let l:filename = expand('%:t:r')
+
+  " If l:filename is empty, and two arguments have been provided, then return
+  " the second one. Otherwise return an empty string.
 	if l:filename == '' | return a:0 == 2 ? a:2 : '' | endif
+
+  " Control gets here if l:filename is not empty. If the first argument was
+  " given, and it contains the string "$1" (sans quotes), then replace $1 with
+  " the filename (multiple times if needed), and return the result of that
+  " substitution.
 	return !a:0 || a:1 == '' ? l:filename : substitute(a:1, '$1', l:filename, 'g')
 endfunction
