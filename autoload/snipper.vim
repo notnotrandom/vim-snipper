@@ -118,8 +118,6 @@ let s:global_key = "global_1234"
 " lines.
 let g:snipper#snippets = {}
 
-let g:snipper#snippets_dir = fnameescape(expand(g:snipper_config.snippet_location))
-
 " Dictionary. Entries are like so:
 "
 " {filetype: {trigger : {'snippet': processed_snippet_text, 'tabstops': list}}}
@@ -1607,7 +1605,7 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
     " deleting an actual character. The negated form of this condition thus
     " tells us when there is nothing to do...
     if s:charActuallyInserted == v:false && l:insertedCharIsBackspace == v:false
-      echomsg "snipper#UpdateSnippet: No character was inserted, so nothing to do..."
+      if g:snipper_debug | echomsg "No character was inserted, so nothing to do..." | endif
       return
     endif
     let s:charActuallyInserted = v:false

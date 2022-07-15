@@ -23,44 +23,6 @@
 "
 "************************************************************************
 
-" Let the user have the last word.
-if exists('g:snipper_config') && has_key(g:snipper_config, 'disable')
-  if g:snipper_config.disable
-    redraw
-    echomsg("vim-snipper: Disabled by user.")
-    finish
-  endif
-endif
-
-if exists('g:vim_snipper_loaded')
-	finish
-endif
-let g:vim_snipper_loaded = 1
-
-" Defaults.
-let b:snipper_config = {
-      \    'debug'            : 0,
-      \    'disable'          : 0,
-      \    'snippet_location' : '~/.vim/snippets/',
-      \}
-
-" Override values with user preferences.
-if exists('g:snipper_config')
-  call extend(g:snipper_config, b:snipper_config)
-else
-  let g:snipper_config = b:snipper_config
-endif
-
-if g:snipper_config.debug == 0
-  let g:snipper_debug = v:false
-else
-  let g:snipper_debug = v:true
-endif
-
-" Set the filetype for .snippets files. Set also the foldmethod to indent.
-autocmd BufRead,BufNewFile *.snippets\= set ft=snippet
-autocmd FileType snippet setl noet fdm=indent
-
 " If the user started a completion on the last word before going to the next
 " tabstop, <Space><BS> forces it to end. See documentation for variable
 " s:compensatedForHiddenBS, in file autoload/snipper.vim.
@@ -81,5 +43,3 @@ snoremap <silent> <Tab> va<C-r>=snipper#JumpToNextTabStop()<CR>
 snoremap <silent> <S-Tab> va<C-r>=snipper#JumpToPreviousTabStop(0)<CR>
 
 nnoremap <silent> <C-s> :call snipper#SearchForTrigger()<CR>
-
-autocmd BufEnter * call snipper#CheckNeedToBuildSnippetDict()
