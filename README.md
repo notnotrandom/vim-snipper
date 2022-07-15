@@ -1,6 +1,3 @@
-# vim-snipper
-Vim snippets done right... I hope!
+# Vim-Snipper: a Vim plugin for firing snippets #
 
-Vim snippets much like Michael Sanders' snipMate, but with less bugs...
-
-More information is forthcoming, but for the meantime, I shall just state the code is released under the GPLv3 license.
+See <https://randomwalk.eu/software/Vim-Snipper/>.
