@@ -12,9 +12,11 @@ Email: See https://randomwalk.eu/contact
 License: GPL
 
   Vim-Snipper is a plugin for snippet expansion, that strives to have the same
-  "work and feel" of Michael Sanders' snipMate plugin (url XXX). In fact,
-  after installing it, you can grab some *.snippet files (e.g., mine, that are
-  based on Sanders', available here XXX), and just start using the plugin!
+  "work and feel" of Michael Sanders' snipMate plugin
+  (https://github.com/msanders/snipmate.vim). In fact, after installing it,
+  you can grab some *.snippet files (e.g., mine, that are based on Sanders',
+  available at https://github.com/notnotrandom/vim-snipper-snippets), and just
+  start using the plugin!
 
   By "using", I mean the following: type a trigger (say, "for" in a *.c file),
   hit <Tab>: the skeleton of a for loop will be shown, with the variables etc.
@@ -81,7 +83,19 @@ Table of Contents                                 *tex_seven-toc*
 
 2.  Snippet files                                  *vim_snipper-snippets*
 
-    to be completed...
+    Back when I started using Sanders' snipMate plugin, I quickly modified the
+    provided snippets to suit my tastes -- and those changes were so quick and
+    heavy, that convinced me that a plugin to insert and process snippets is
+    one thing, but the snippets themselves are another thing. Hence, this
+    plugin of mine does not come with snippets out of the box.
+
+    However, that does not mean that the user has to start writing his
+    snippets from scratch, because I do provide a starting point, namely the
+    bunch of snippets available here:
+    https://github.com/notnotrandom/vim-snipper-snippets. My suggestion is to
+    clone them into the whatever location g:snipper_config.snippet_location
+    points to, and start using them. And then, do as I have done: modify them
+    to suit your own needs.
 
 ==============================================================================
 
