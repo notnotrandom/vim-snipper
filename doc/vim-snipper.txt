@@ -81,16 +81,7 @@ Table of Contents                                 *tex_seven-toc*
 
 2.  Snippet files                                  *vim_snipper-snippets*
 
-    TeX-7 defines various mappings that speed up typesetting LaTeX code. Most
-    of the mappings are prefixed with |maplocalleader|, referred below with
-    the symbol <LocalLeader>. If you have set "g:tex_seven_config.leader", the
-    corresponding character is used. Otherwise, it defaults to colon (:).
-
-    Especially for multi-file projects, it is recommended to launch "(g)vim"
-    from the same folder where the main ".tex" file is located. While most
-    features should work fine even if you don't do this, it is the best
-    strategy to avoid unforeseen problems with relative paths. Besides, it's
-    the most natural thing to do anyway, so...
+    to be completed...
 
 ==============================================================================
 
