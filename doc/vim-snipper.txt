@@ -1,9 +1,9 @@
-*tex_seven.txt*	For Vim version 7.5	Last change: July 15, 2022
+*vim-snipper.txt*	For Vim version 7.5	Last change: July 15, 2022
 
-                          TeX-7
+                          Vim-Snipper
 
               A semi-automatic, minimalistic
-                      LaTeX ftplugin
+                     snippets plugin
               that does not get in your way!
 
 
@@ -11,155 +11,75 @@ Author: Óscar Pereira
 Email: See https://randomwalk.eu/contact
 License: GPL
 
-  TeX-7 is a ftplugin that aims to enhance the writing experience of high
-  quality documents with LaTeX and Vim. The goal of TeX-7 is to be simple and
-  Vimish, meaning that focus is on carefully thought-out key mappings and
-  features that are already present in a typical Vim installation. If you need
-  to write a thesis or research articles and insist on having only one editor
-  for all editing tasks, then TeX-7 is for you!
+  Vim-Snipper is a plugin for snippet expansion, that strives to have the same
+  "work and feel" of Michael Sanders' snipMate plugin (url XXX). In fact,
+  after installing it, you can grab some *.snippet files (e.g., mine, that are
+  based on Sanders', available here XXX), and just start using the plugin!
 
-  The main features of TeX-7 are:
-    * Powerful text-object for LaTeX environments;
-    * Omni-completion of BibTeX database entries and label references;
-    * Omni-completion of mathematical symbols, and included files;
-    * Preview of BibTeX database entries and label references;
-    * Preview of \includegraphics (supported formats: JPG, PNG, or PDF);
-    * Filetype specific indentation (courtesy of Johannes Tanzler);
-    * No-hassle settings, relatively few mappings;
-    * Supports distraction-free LaTeX "small compile", done when saving.
+  By "using", I mean the following: type a trigger (say, "for" in a *.c file),
+  hit <Tab>: the skeleton of a for loop will be shown, with the variables etc.
+  as tabstops. Type the names you want, go back and forth between tabstops
+  with <Tab> and <S-Tab>, until you are satisfied, and then it's done!
+
+  There is also passive completion: changing e.g. the variable name once, will
+  change it in the other places where it shows up. All in all, I strived to
+  make this snippet plugin "just work" -- so as to let the user focus on his
+  task, rather than on his tool.
 
   Shoutouts & thanks
-    * Elias Toivanen, the original author of the TeX-9 plugin.
+    * Michael Sanders, the original author of the snipMate plugin.
 
 ==============================================================================
 
 Table of Contents                                 *tex_seven-toc*
 
-  1. Installation                                 |tex_seven-installation|
-  2. Basics                                       |tex_seven-basics|
-    2.1 Insert Mode                               |tex_seven-basics-insert_mode|
-    2.1 Normal Mode                               |tex_seven-basics-normal_mode|
-    2.1 Visual Mode                               |tex_seven-basics-visual_mode|
-  3. Compilation and Multi-file                   |tex_seven-compile-mfile|
-    3.1 Compilation                               |tex_seven-compile|
-    3.2 Multi-file Projects                       |tex_seven-mfile|
-  4. Jumping                                      |tex_seven-jumping|
-    4.1 Compilation                               |tex_seven-jumping-citations|
-    4.2 Labels and References                     |tex_seven-jumping-label_refs|
-    4.3 Includes                                  |tex_seven-jumping-includes|
-    4.4 Graphics                                  |tex_seven-jumping-graphics|
-  5. Completion                                   |tex_seven-completion|
-    5.1 Omni-Compilation                          |tex_seven-completion-omni|
-    5.2 Math-Compilation                          |tex_seven-completion-math|
-  6. Mappings                                     |tex_seven-mappings|
-    6.1 Insert Mode                               |tex_seven-mappings-insert_mode|
-    6.2 Normal Mode                               |tex_seven-mappings-normal_mode|
-    6.2 Visual Mode                               |tex_seven-mappings-visual_mode|
-  7. Tips and tricks                              |tex_seven-tips|
-    7.1 Override, extend and hack TeX-7           |tex_seven-tips-hack_extend|
-    7.2 Custom environment list/templates         |tex_seven-tips-custom_envs|
-    7.3 Spell checking                            |tex_seven-tips-spell_check|
+  1. Installation                                 |vim_snipper-installation|
+  2. Snippet files                                |vim_snipper-snippets|
 
 ==============================================================================
 
-1.  Installation                                  *tex_seven-installation*
+1.  Installation                                  *vim_snipper-installation*
 
-  To install TeX-7, I will assume you are a good citizen, and use something
-  like Tim Pope's Pathogen plugin, or something to that effect. In the
-  case of Pathogen, just clone this plugin into the bundle directory,
+  To install Vim-Snipper, I will assume you are a good citizen, and use
+  something like Tim Pope's Pathogen plugin, or something to that effect. In
+  the case of Pathogen, just clone this plugin into the bundle directory,
   usually ~/.vim/bundle, and run `:Helptags` afterwords.
 
   Next, open up |vimrc| and ensure it contains the following line:
   >
   filetype plugin indent on
 <
-  Strictly speaking, for basic usage you don't need to configure anything
-  else. However, you may find the following settings very useful in making
-  TeX-7 more convenient to use.
+  For basic usage, the only additional thing you need are *.snippet files,
+  about which, see |vim_snipper-snippets|.
 
-  compiler : String
-      * Program used to compile LaTeX sources.
-      * Default: "make".
+  However, there are three settings that you can use:
 
-  compiler_opts : String
-      * Options or parameters to be given when invoking the LaTeX compiler.
-      * Default: empty.
-
+  debug: Boolean
+      * Vim-Snipper shows debug output.
+      * Default: 0 (debug output is not shown).
+      *
   disable: Boolean
-      * TeX-7 is disabled temporarily.
-      * Default: 0 (TeX-7 is loaded).
+      * Vim-Snipper is disabled temporarily.
+      * Default: 0 (Vim-Snipper is loaded).
 
-  diamond_tex: Boolean
-      * TeX-9 originally mapped <LocalLeader>< to \leq, and <LocalLeader>>
-        to \geq. However, I find these LaTeX commands actually easy to type,
-        to I prefer to map <LocalLeader>< to \langle\rangle, and
-        <LocalLeader>> to <> (sometimes called diamond). Among other things,
-        the latter is useful when writing Beamer templates.
-      * Default: 1 (map <LocalLeader>> to <> and <LocalLeader>< to * \(lr)angle).
-
-  label_retrieval_use_script: Boolean
-      *   Set whether \label retrieval will be done using vimscript only, or
-          using an external Perl script (see below for requirements).
-      *   Default: 0 (retrieves \label's using vimscript only).
-
-  leader: String
-      *   Most TeX-7 mappings begin with this prefix.
-      *   Optional.
-      *   Default: ':'.
-
-  viewer: String
-      *   Application used for viewing PDF files.
-      *   Optional.
-      *   Default: empty.
-
-  viewer_images: String
-      *   Application used for viewing JPG/PNG files.
-      *   Optional.
-      *   Default: empty.
+  snippet_location: String
+      *   Directory where the plugin most look for *.snippet files.
+      *   Default: '~/.vim/snippets'.
 
   You set these, er, settings, by defining a |Dictionary| called
-  g:tex_seven_config in your |vimrc| (or better yet, in
-  $VIMRUNTIME/ftplugin/tex.vim). In this latter file, you can add any settings
-  that are not overrides of things defined by TeX-7. (For such overrides, use
-  the after/ directory; cf. |tex_seven-tips|.)
+  g:tex_seven_config in your |vimrc|.
 
   Example:
 >
-  let g:tex_seven_config = {
-    \ 'compiler'                   : '/bin/bash',
-    \ 'compiler_opts'              : 'CompileTeX.sh',
-    \ 'label_retrieval_use_script' : 1,
-    \ 'viewer'                     : 'okular' ,
-    \ 'viewer_images'              : 'gwenview' }
-<
-  IMPORTANT #1: Do NOT set this |Dictionary| in
-  $VIMRUNTIME/after/ftplugin/tex.vim. This file is only sourced after TeX-7
-  has ran, and thus if you set, say, a custom |LocalLeader|, all of the
-  mappings will be set using the predefined value of |LocalLeader|.
-
-  IMPORTANT #2: If you put any custom settings in either
-  $VIMRUNTIME/ftplugin/tex.vim or $VIMRUNTIME/after/ftplugin/tex.vim, then
-  you are highly encouraged to ensure that neither of them are sourced more
-  than once. One way is to defined a sort of "include guards", like these:
->
-  " Put this at the start of $VIMRUNTIME/ftplugin/tex.vim.
-  if exists('b:ftplugin_tex_init')
-    finish
-  endif
-  let b:ftplugin_tex_init = 1
-
-  " And this at the start of $VIMRUNTIME/after/ftplugin/tex.vim.
-  if exists('b:after_ftplugin_tex_init')
-    finish
-  endif
-  let b:after_ftplugin_tex_init = 1
-
-  IMPORTANT #3: To use the Perl script for \label retrieval, the perl-json
-  module is required (in addition to Perl itself).
+  let g:snipper_config = {
+    \    'debug'            : 1,
+    \    'disable'          : 0,
+    \    'snippet_location' : '~/snippets/',
+    \}
 <
 ==============================================================================
 
-2.  Basics                                        *tex_seven-basics*
+2.  Snippet files                                  *vim_snipper-snippets*
 
     TeX-7 defines various mappings that speed up typesetting LaTeX code. Most
     of the mappings are prefixed with |maplocalleader|, referred below with
@@ -171,596 +91,6 @@ Table of Contents                                 *tex_seven-toc*
     features should work fine even if you don't do this, it is the best
     strategy to avoid unforeseen problems with relative paths. Besides, it's
     the most natural thing to do anyway, so...
-
-    Below is a short tutorial that should get you going in no time.
-
-2.1 Insert mode                                   *tex_seven-basics-insert_mode*
-
-    To insert an environment, press <LocalLeader>B. You're prompted for an
-    environment name, then the following is inserted:
-
-        \begin{<envname>}
-          |
-        \end{<envname>}
-
-    <envname> is the supplied environment name; the cursor is left where the |
-    is. The list of environments comes from file ftplugin/environments.txt.
-    This can be customised; cf. |tex_seven-tips-custom_envs|.
-
-    Furthermore, by default the template for an environment is the one shown
-    above, but it can be customised for specific environments. This is done in
-    file ftplugin/environments.snippets. See the examples in that file, but
-    the syntax is simple: the word following the "snippet" keyword must be the
-    name of the environment to be customised. The other lines MUST start with
-    a <Tab>, and contain the snippet to be inserted for that environment. Note
-    that NO EMPTY lines are allowed, for otherwise it would not be possible to
-    detect where a snippet ended. This list of templates can also be
-    customised; again, cf. |tex_seven-tips-custom_envs|.
-
-    The template code can contain indented lines, with tabs or spaces; upon
-    insertion, the :retab command is executed (only over the newly inserted
-    lines). Lastly, I should point out that, even though this feature was
-    developed with LaTeX environments in mind, there is nothing preventing its
-    use for other constructs the user might use frequently.
-
-    To insert a command, press "<LocalLeader><Space>" (sans quotes).
-    "\cmd{arg}" is inserted (sans quotes), with the "cmd" part visually
-    selected (select-mode, not visual-mode). So just type the command name.
-    Then just hit <Tab>, to move to the "arg" part, which will be left
-    visually selected (idem.), for you to type over. After that, hitting <Tab>
-    once more will move the cursor to the right of the now finished command
-    (i.e., after the '}'), so you can continue to type your LaTeX document.
-
-    Nested commands will also work, but in this scenario, the cursor will be
-    left after the innermost '}'. For example, if you use this feature to
-    insert "\footnote{\url{https://example.com}}", the cursor will be left
-    after the '}' that closes the "\url" command.
-
-    Note that both the mappings that set the <Tab> key behaviour described
-    above, as well as the mappings for <Esc> and <C-c> described below, are
-    local (i.e., for the current buffer only). And after finishing typing the
-    command (i.e., after pressing <Tab> for the second time), they are either
-    unset, or restored to their previous values.
-
-    If you want to interrupt the command insertion for whatever reason, then
-    pressing <Esc> or hitting <C-c>, will clear all local maps of the <Tab>
-    key, restoring any previous mappings, if any (e.g. a mapping from a
-    snippets plugin).
-
-    The local mapping of the <Esc> key itself, that allows pressing it to
-    unamp the <Tab> key, is itself cleared when pressing <Esc>. The same goes
-    for <C-c>. So long story short, this works as you would expect, without
-    surprises.
-
-    And if for either the "cmd" part, or the "arg" part, you want to paste
-    some text you have previously yanked/cut/etc, you can do that, by pressing
-    <C-o>, which will take you to visual mode, where you can then hit p or P.
-    Then you will be left in insert mode -- just if you had typed the text
-    that you actually pasted -- from where you can just hit <Tab>, to continue
-    normally.
-
-    Moving on, type <LocalLeader>C to insert a citation, i.e.
-    "\cite{citekey}". You're prompted with a popup list of completions if the
-    \bibliography{} (or \addbibresources{}) statement contains a valid BibTeX
-    file. Inserting references, "\ref{ref}", works in a similar way. The
-    corresponding mapping is <LocalLeader>R. Here are a few other mappings
-    that work similarly:
-
-        * <LocalLeader>A inserts "\includeonly{}" and starts completion inside
-          the brackets.
-        * <LocalLeader>E inserts "\eqref{}" and starts completion inside the
-          brackets.
-        * <LocalLeader>Z inserts "\includegraphics{}" and starts completion
-          inside the brackets. Supported graphic types: JPG, PDF, PNG.
-
-    You can also some write, in the completion space, some string (say "foo"),
-    and hit <LocalLeader>K. This will filter the original list of completions,
-    to show you only those that contain the string "foo". See
-    |tex_seven-completion| for more details.
-
-    There are also some macros that work by double tapping a character on your
-    keyboard (super convenient for subscripts and superscripts!).
-
-        ^^ -> ^{}
-        __ -> _{}
-        ~~ -> \approx
-        == -> &=
-
-    Furthermore, pressing <LocalLeader>" inserts "LaTeX quotes", i.e.,
-    ``''. Also works for single quotes. And by defaut, hitting
-    <LocalLeader> twice (i.e. <Localleader><Localleader>) inserts that
-    character itself. E.g., if <LocalLeader> is set to colon (:) (the
-    default without user config defined), then <Localleader><Localleader>
-    inserts a literal colon in the text.
-
-2.2 Normal mode                                   *tex_seven-basics-normal_mode*
-
-    Typing <LocalLeader>V should open the document in the PDF viewer
-    configured in "g:tex_seven_config" (see above). If you didn't set
-    "g:tex_seven_config.viewer", an error message is shown.
-
-    If you are using multi-file projects (see
-    |tex_seven-compile-mfile|), then hitting <LocalLeader>gm will bring
-    you back to the main .tex file (mnemonic: "go to main file").
-
-    To rename an enclosing environment, press <LocalLeader>R. You're prompted
-    for a new environment name, and that gets replaced both in the \begin and
-    \end lines of that enclosing environment. This works if the cursor is
-    placed anywhere on the \begin line, anywhere on the \end line, or anywhere
-    inside the environment (but *not* inside an inner nested environment, for
-    in that case it is that inner environment's name that gets replaced). It
-    also works when either the \begin or the \end statements are not at the
-    start of their respective lines.
-
-    To go from from a "\label{" or "\cite{" to its corresponding definition,
-    place the cursor over them and hit either [gp] or [gd]: the first will
-    open the corresponding "\ref{" or bib entry in a preview window (mnemonic:
-    go preview), and the second in a new buffer (using :edit; mnemonic: go to
-    definition). Note that in the case of a preview window, the cursor WILL
-    MOVE to that window. To close it, hit :q, as usual.
-
-    This functionality also works for things other than \label's and \cite's;
-    see |tex_seven-jumping|.
-
-    Typing <LocalLeader>B should move the cursor to the first line opening an
-    environment ("\begin{"), that is above the current line (the line where
-    the cursor is). Similarly, typing <LocalLeader>E should move the cursor to
-    the first line ending an environment ("\end{"), that is below the current
-    line. Both are super useful when used in combination with the mappings to
-    select/yank/move/etc. entire environments, as described next.
-    Especially in the case of nested environments, when the cursor is
-    positioned at the innermost environment, but you want to select,
-    say, the outermost.
-
-2.3 Visual mode                                   *tex_seven-basics-visual_mode*
-
-    TeX-7 comes with a custom `environment operator' (see ||text-objects||).
-    Press 'vie' or 'vae' in normal normal to highlight the current inner
-    environment (without the \begin and \end statements) or the outer
-    environment respectively. Replace 'v' with another operator to achieve
-    yanking, changing or deleting etc. For example, typing 'dae' makes it
-    trivial to move figures and tables around in the document. Delete the
-    environment, find a new location and paste it back on the buffer!
-
-    Additionally, there are similar operators for inline math, i.e., math
-    delimited by dollar signs ($). For example, if you have $x = 1$, then
-    pressing 'vam' with the cursor anywhere in that inline math expression,
-    will visually select all of it, including the delimiters. Hitting 'vim'
-    does the same, but excludes the delimiters. And on for 'dam', 'dim', etc.
-
-==============================================================================
-
-3.  Compilation and Multi-file                    *tex_seven-compile-mfile*
-
-3.1 Compilation                                   *tex_seven-compile*
-
-    The last feature in the feature list at the beginning talks of a "small
-    compile", meaning a one-time run of the LaTeX compilation program or
-    script. Other compilation cycles, like a "full build" that also constructs
-    the bibliography, are outside of the scope of the this plugin. This is
-    because compilation of LaTeX files is very tricky to get right in all
-    circumstances, and after all, Vim is not an IDE.
-
-    Now, as any LaTeX user knows (and as novice users quickly find out),
-    LaTeX's error messages can be notoriously hard to interpret correctly...
-    So what one usually does is save and build often, so that if any errors do
-    occur, then the user likely can pinpoint the change that caused it. To aid
-    in this task, this plugin defines a normal mode mapping :ww (note
-    that the : is a literal colon, not the default value of <LocalLeader>),
-    that saves the current file, and does a small compile of the LaTeX
-    project. So instead of writing (`:w`), the user can instead do a
-    write-and-build, relatively seamlessly (:ww). This build is done in
-    background, and if it succeeds, nothing more is said to the user,
-    that can just continue to work. He is only notified if errors occur,
-    so that he can go fix them, before writing any more.
-
-3.2 Multi-file Projects                           *tex_seven-mfile*
-
-    In order to work with LaTeX projects containing multiple files, each file
-    other than the main one (the one containing the "\documentclass" line)
-    must contain a *modeline* indicating the relative location of the main
-    .tex file. E.g., if your main file is named main.tex, and it includes a
-    file with relative path chapters/introduction.tex, then this file must
-    contain a modeline similar to:
-
-    % mainfile: ../main.tex
-
-    The modeline must appear either on the three first lines of the file, or
-    on the three last. Also note that the relative path must not contain
-    spaces!
-
-==============================================================================
-
-4.  Jumping                                       *tex_seven-jumping*
-
-    TeX-7 allows you to, for example, preview a bibliographic reference, by
-    placing the cursor somewhere over the "\cite{...}" command, and hit [gp]:
-    the corresponding BibTeX entry is then shown in a preview window. There
-    are many other possibilities, besides bibliographic references. All of
-    them are described in this section. Before that, an important note: all
-    the features described here using [gp], also work with [gd], with the
-    difference that in the latter case, no preview window is opened (i.e.,
-    `:edit` is used instead of `:pedit`).
-
-    Also note that when using [gp], to close the preview window after having
-    placed the cursor in some other window, there is no need to go back to the
-    preview window. Just hit [gb], which is an alias to :pclose (mnemonic: Go
-    Back to when there was no preview window opened). When using [gd], to go
-    back hit CTRL-o. All in normal mode.
-
-    Furthermore, [gf] is an alias to [gd]. See section
-    |tex_seven-jumping-includes| below for the reason for this.
-
-4.1 Citations                                     *tex_seven-jumping-citations*
-
-    If you have a citation like "\cite[some note]{key}", or "\nocite{key}",
-    then placing the cursor *anywhere*, even outside of the "key" part, and
-    pressing [gp] will open a preview window displaying the bib entry
-    corresponding to that key.
-
-    If you have a citation like "\cite{key1, key2}", or "\cite[some
-    note]{key1, key2}", if you press [gp] when the cursor is over "key1", or
-    "key2", then the corresponding bib entry will be shown. If the cursor is
-    *before* the first key, e.g. over the "\cite{" string, then the entry for
-    that first key is shown (in this case "key1"). If the cursor is inside the
-    curly braces, but not over any key, then *the first preceding key* is
-    used. In the example, if the cursor is at the comma or the space inside
-    the curly brackets, "key1" is used. If the cursor is at the closing
-    bracket '}', then "key2" is used.
-
-4.2 Labels and References                         *tex_seven-jumping-label_refs*
-
-    If you have a reference like "\ref{key}", or "\eqref{key}", then placing
-    the cursor *anywhere*, even outside of the "key" part, and pressing [gp]
-    will open a preview window showing the corresponding "\label{key}"
-    statement.
-
-4.3 Includes                                      *tex_seven-jumping-includes*
-
-    If you have a line like "\include{filename}", or "\includeonly{filename}",
-    then placing the cursor *anywhere*, even outside of the "filename" part,
-    and pressing [gp] will show the file named "filename" in the preview
-    window.
-
-    As stated above, [gf] is an alias to [gd]. The reason for this is that by
-    default, hitting [gf] when the cursor is over a file name/path makes vim
-    open that file in a new buffer (if the file exists). So to jump between
-    files, I thought that the [gf] map might feel more natural (it does to
-    me). Of course, this also means that you can use [gf] to, say, jump from a
-    \ref to the corresponding \label. Use whatever shortcut suits you best!
-
-4.4 Graphics                                      *tex_seven-jumping-graphics*
-
-    If you have a line like "\includegraphics{graphicfilename}", then placing
-    the cursor *anywhere*, even outside of the "graphicfilename" part, and
-    pressing [gd] or [gp] will open "graphicfilename" using the application
-    configured in "g:tex_seven_config.viewer" for PDF files, and
-    "g:tex_seven_config.viewer_images" for JPG or PNG files (see
-    |tex_seven-installation|). If you didn't set "g:tex_seven_config.viewer",
-    and/or "g:tex_seven_config.viewer_images", an error message is shown.
-
-==============================================================================
-
-5.  Completion                                    *tex_seven-completion*
-
-    Say you have the following text in a .tex file: "\ref{|}", with the cursor
-    being in the position of '|' (in insert mode). If you press
-    <LocalLeader>K, `vim` will show you a popup, containing all keys
-    corresponding to "\label{key}" statements found in the main .tex file, and
-    any files \include'd therein, if any. Furthermore, if what is actually
-    in your .tex file is something like: "\ref{sec:|}", then the popup will
-    show only label keys that start with the prefix "sec:" (sans quotes).
-
-    Pretty nice, right? This is called *completion*. What I described above is
-    a part of so-called "omni-completion". The other is completion of math
-    paraphernalia, creatively named "math-completion". Both are described in
-    the following sections.
-
-    Note that as in the example above, all completion scenarios described
-    below always takes place in insert mode. Also, | is used to denote the
-    cursor's position.
-
-    PERL SCRIPT FOR LABELS. Retrieval of \label statements, by default, is
-    done using pure vimscript -- but the algorithm is rather naïve. For one
-    thing, all the .tex files have to be parsed each time completion is
-    triggered. This is fine for small documents, but for larger projects, it
-    can be more convenient to use an external Perl script (this is done
-    setting label_retrieval_use_script to 1, in the configuration dictionary).
-    When this is set, when opening a file, the external script is launched in
-    the background, to retrieve all \label statements, across all project
-    .tex files. Thus, triggered completion will be a quicker process. (Recall
-    that this external script requires that Perl be installed, together with
-    the perl-json module, as stated in |tex_seven-installation|).
-
-5.1 Omni-Completion                               *tex_seven-completion-omni*
-
-    The above introduction already covers the case of omni-completion for
-    "\ref{"; completion for "\eqref{" works in the same way. Completion for
-    "\label{" is also done: it returns the list of existing \label's (i.e., it
-    returns the same thing as for "\ref{" and "\eqref{"). The rationale for
-    the omni-completion of \label statements is that one might want to create
-    a new label using as a prefix the name of an existing label. For example,
-    for sections inside chapters, I prefix the label of the section with the
-    label of the chapter. This avoids label clashes for situations where, for
-    instance, more than one chapter has a section named "Introduction".
-
-    Completion for "\includeonly{" and "\includegraphics{" are similar, with
-    the difference that what is returned are list of files \include'd in the
-    main .tex file (if any), and graphic files, respectively. The graphic
-    files are searched in the folder that contains the main .tex file, and any
-    subfolders therein (but note that any files inside folders with names
-    containing the string "build" are ignored).
-
-    In all the cases described here, if there is a base, then only matches
-    that contain that base string are returned, just as was explained for the
-    case of "\ref{sec:}" above. For example, suppose you hit <LocalLeader>A.
-    "\includeonly{|}" gets inserted, and completion entries shown. If you then
-    type "foo" (sans quotes), by default vim will show you the entries that
-    START WITH "foo". But if you then hit <LocalLeader>K, TeX-7 will show you
-    all the entries that CONTAIN the string "foo", even if not at the
-    beginning. However, the text "foo" that you typed is deleted. Vim does
-    this because the matching entries might not all *begin with* that string.
-
-5.2 Math-Completion                               *tex_seven-completion-math*
-
-    Type <LocalLeader>M to get a popup list of different maths symbols,
-    together with their shape (e.g. "\alpha" corresponds to α). I have
-    (mostly) chosen to put on the completion list
-    (~/.vim/autoload/tex_seven/omniMath.vim) symbols that have an Unicode
-    representation, and can hence be "previewed" in this fashion.
-
-    Furthermore, if there is a word to the left of the cursor, that word is
-    used to filter the results of the popup list. For example, if you write
-    "$x arrow|$" and press <LocalLeader>M, the popup list will contain all
-    math symbols containing, but not necessarily starting with, the string
-    "arrow". This also works if you write "\arrow". In both cases, you get a
-    command, i.e., if you write "arrow" or "\arrow", hit <LocalLeader>M, and
-    then select "rightarrow" from the completion popup, you get the command
-    "\rightarrow".
-
-    Additionally, the most frequently used maths symbols have their own
-    shortcuts.  Typing <LocalLeader>a expands to \alpha for example. Refer
-    to |tex_seven-mappings| below for a complete listing.
-
-==============================================================================
-
-6.  Mappings                                      *tex_seven-mappings*
-
-    As explained in |tex_seven-basics|, the symbol <LocalLeader> refers to the
-    value of "g:tex_seven_config.leader", or if this is not set, to the value
-    of |maplocalleader|. If this is also unset, then the default value is
-    colon ':'.
-
-    Furthermore, keep in mind that these mappings can be customised; see
-    |tex_seven-tips| to see an example.
-
-6.1 Insert Mode                               *tex_seven-mappings-insert_mode*
-
-    In the mappings below, whenever completion is available (e.g. for
-    \ref), it is started. Cf. |tex_seven-completion| for details.
-
-    <LocalLeader><LocalLeader> <LocalLeader>
-    <LocalLeader>'             LaTeX's inverted single commas `'
-    <LocalLeader>"             LaTeX's inverted double commas ``''
-    <LocalLeader>A             Insert \includeonly{}, and start completion
-    <LocalLeader>B             Insert environment (prompts for a name)
-    <LocalLeader>C             Insert \cite{}, and start completion
-    <LocalLeader>E             Insert \eqref{} (equation reference), and start completion
-    <LocalLeader>K             Start regular (non-math) completion
-    <LocalLeader>M             Start math completion
-    <LocalLeader>R             Insert \ref{}, and start completion
-    <LocalLeader>Z             Insert \includegraphics{} reference
-
-    Greek
-
-    <LocalLeader>a  \alpha
-    <LocalLeader>b  \beta
-    <LocalLeader>c  \chi
-    <LocalLeader>d  \delta
-    <LocalLeader>e  \epsilon
-    <LocalLeader>f  \phi
-    <LocalLeader>g  \gamma
-    <LocalLeader>h  \eta
-    <LocalLeader>i  \iota
-    <LocalLeader>k  \kappa
-    <LocalLeader>l  \lambda
-    <LocalLeader>m  \mu
-    <LocalLeader>n  \nu
-    <LocalLeader>o  \omega
-    <LocalLeader>p  \pi
-    <LocalLeader>q  \theta
-    <LocalLeader>r  \rho
-    <LocalLeader>s  \sigma
-    <LocalLeader>t  \tau
-    <LocalLeader>u  \upsilon
-    <LocalLeader>w  \varpi
-    <LocalLeader>x  \xi
-    <LocalLeader>y  \psi
-    <LocalLeader>z  \zeta
-    <LocalLeader>D  \Delta
-    <LocalLeader>F  \Phi
-    <LocalLeader>G  \Gamma
-    <LocalLeader>L  \Lambda
-    <LocalLeader>O  \Omega
-    <LocalLeader>P  \Pi
-    <LocalLeader>Q  \Theta
-    <LocalLeader>U  \Upsilon
-    <LocalLeader>X  \Xi
-    <LocalLeader>Y  \Psi
-    <LocalLeader>_e \varepsilon
-    <LocalLeader>_q \vartheta
-    <LocalLeader>_r \varrho
-    <LocalLeader>_s \varsigma
-    <LocalLeader>_f \varphi
-
-    Maths
-
-    <LocalLeader>\     \setminus
-    <LocalLeader>½     \sqrt{}<Left>
-    <LocalLeader>N     \nabla
-    <LocalLeader>S     \sum_{}^{}<Esc>2F{a
-    <LocalLeader>_S    \prod_{}^{}<Esc>2F{a
-    <LocalLeader>V     \vec{}<Left>
-    <LocalLeader>I     \int\limits_{}^{}<Esc>2F{a
-    <LocalLeader>0     \emptyset
-    <LocalLeader>_0    \varnothing
-    <LocalLeader>6     \partial
-    <LocalLeader>Q     \infty
-    <LocalLeader>/     \frac{}{}<Esc>2F{a
-    <LocalLeader>\|    \lor
-    <LocalLeader>&     \land
-    <LocalLeader>\|\|  \bigvee
-    <LocalLeader>&&    \bigwedge
-    <LocalLeader>@     \circ
-    <LocalLeader>*     \not
-    <LocalLeader>!     \neq
-    <LocalLeader>~     \neg
-    <LocalLeader>=     \equiv
-    <LocalLeader>-     \cap
-    <LocalLeader>+     \cup
-    <LocalLeader>--    \bigcap
-    <LocalLeader>-+    \bigcup
-    <LocalLeader>~     \widetilde{}<Left>
-    <LocalLeader>^     \widehat{}<Left>
-    <LocalLeader>_     \overline{}<Left>
-    <LocalLeader>.     \cdot<Space>
-    <LocalLeader><CR>  \nonumber\\<CR>
-    <LocalLeader>«     \langle
-    <LocalLeader>»     \rangle
-    <LocalLeader>(     \left(  \right)<Esc>F(la
-    <LocalLeader>[     \left[  \right]<Esc>F[la
-    <LocalLeader>{     \left\{  \right\}<Esc>F{la
-
-    <LocalLeader>> <><Left>
-    <LocalLeader>< \langle  \rangle<Esc>F\hi
-
-    The last two mappings above are as I prefer them. However, by
-    setting the config flag "diamond_tex" to 0 (see
-    |tex_seven-installation|), you can revert them to TeX-9's original
-    mappings:
-
-    <LocalLeader>< \leq
-    <LocalLeader>> \geq
-
-6.2 Normal Mode                                   *tex_seven-mappings-normal_mode*
-
-    See |tex_seven-jumping| for the details of the functionality provided
-    by the mappings below.
-
-    gb              Go back from preview window (alias to :pclose)
-    gd              Go from \ref to the corresponding \label declaration, or similar
-    gf              Go to, say, an \include{file}, or similar
-    gm              Go back to main file
-    gp              Same as gd/gf, but show on a preview window, if applicable
-                    (obviously this does not apply when, say, displaying an image file)
-
-    See |tex_seven-basics-normal_mode| for the details of the functionality
-    provided by the mappings below.
-
-    <LocalLeader>B  Go to \begin above
-    <LocalLeader>E  Go to \end below
-    <LocalLeader>R  Rename environment
-    <LocalLeader>V  View the document
-
-    :ww             Do a small compile (see |tex_seven-compile-mfile|)
-
-6.3 Visual Mode                                   *tex_seven-mappings-visual_mode*
-
-    Besides the operator for selecting environments and inline
-    mathematics (see |tex_seven-basics-visual_mode|), the following mappings
-    allow you to quickly change the style of already existing text.
-
-    vmap <buffer><expr> <LocalLeader>bf tex_seven#ChangeFontStyle('bf')
-    vmap <buffer><expr> <LocalLeader>it tex_seven#ChangeFontStyle('it')
-    vmap <buffer><expr> <LocalLeader>rm tex_seven#ChangeFontStyle('rm')
-    vmap <buffer><expr> <LocalLeader>sf tex_seven#ChangeFontStyle('sf')
-    vmap <buffer><expr> <LocalLeader>tt tex_seven#ChangeFontStyle('tt')
-    vmap <buffer>       <LocalLeader>up di\text{}<Left><C-R>"
-
-    For example, to convert the word under the cursor to boldface, type:
-
-    viw<Leader>bf
-
-    To convert the current visual selectio to upright text, type:
-
-    <Leader>up
-
-==============================================================================
-
-7.  Tips and tricks                               *tex_seven-tips*
-
-7.1 Override, extend and hack TeX-7               *tex_seven-tips-hack_extend*
-
-    Create a custom tex.vim file in the after/ directory, i.e.
-    ~/.vim/after/ftplugin/tex.vim. Here you can redefine mappings and extend
-    TeX-7's functionality with your own ideas. If you come up with something
-    sweet, kindly drop me a line :-) (email address available at
-    https://randomwalk.eu).
-
-    Notice that to redefine mappings, you need need to set <LocalLeader>
-    again. As an example, here is my ~/.vim/after/ftplugin/tex.vim:
-
-    " First, reset <LocalLeader>. Note that this will run *after* TeX-7, and hence
-    " the variable g:tex_seven_config.leader will be set.
-    if exists('g:maplocalleader')
-      let s:maplocalleader_saved = g:maplocalleader
-    endif
-    let g:maplocalleader = g:tex_seven_config.leader
-
-    " Now, implement user's customisations. In this case, override of selected
-    " TeX-7 mappings.
-    inoremap <buffer> <LocalLeader>e \varepsilon
-    inoremap <buffer> <LocalLeader>_e \epsilon
-
-    inoremap <buffer> <LocalLeader>_0 \emptyset
-    inoremap <buffer> <LocalLeader>0 \varnothing
-
-    " I find this easier to insert commands in .tex files (something I do often).
-    inoremap <buffer><expr> ,, tex_seven#InsertCommand()
-    inoremap <buffer> <LocalLeader>,, ,,
-
-    " And lastly, revert <LocalLeader> to its previous setting, if any.
-    if exists('s:maplocalleader_saved')
-      let g:maplocalleader = s:maplocalleader_saved
-      unlet s:maplocalleader_saved
-    else
-      unlet g:maplocalleader
-    endif
-
-7.2 Custom environment list/templates             *tex_seven-tips-custom_envs*
-
-    You can set a custom list of environment names for environment insertion
-    (see |tex_seven-basics|). Copy the environment names file
-    (ftplugin/environments.txt) to ~/.vim/after/ftplugin/ (see
-    |tex_seven-tips-hack_extend|), and customise it to suit your needs. Then,
-    in ~/.vim/after/ftplugin/tex.vim, insert:
-
-    let b:env_list = fnameescape(expand('<sfile>:h') . '/environments.txt')
-
-    Environment name completion will now use your name list, rather than
-    TeX-7's default list.
-
-    The same trick can be used to set up a custom environment template list;
-    the line to add to ~/.vim/after/ftplugin/tex.vim is:
-
-    let b:env_snippets = fnameescape(expand('<sfile>:h') . '/environments.snippets')
-
-    And of course, the file to copy is ftplugin/environments.snippets.
-
-7.3 Spell checking                                *tex_seven-tips-spell_check*
-
-    If you've enabled 'modeline', you may conveniently activate spell checking
-    (among other settings) in your LaTeX documents, like so (example for
-    anglophones):
->
-    % vim:tw=66 sw=2 ft=tex spell spelllang=en
-<
-    Notice that newer versions of Vim provide an option >
-
-    let g:tex_comment_nospell=1
-<
-    for disabling spell checking of comments that otherwise get messed up
-    pretty badly.
 
 ==============================================================================
 
