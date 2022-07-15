@@ -30,7 +30,7 @@ endif
 
 " For some reason, this cannot be done in autoload/snipper.vim, because it
 " seems to run before the above call to extend()... and so, if the user
-" provided a config without specifying snippet_location, when
+" provided a config without specifying, say, snippet_location, when
 " autoload/snipper.vim ran, no snippet location would be defined...
 let g:snipper#snippets_dir = fnameescape(expand(g:snipper_config.snippet_location))
 
