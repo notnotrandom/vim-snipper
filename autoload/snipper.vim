@@ -1,5 +1,4 @@
 " Vim snippets plugin
-" Languages:    any
 " Maintainer:   Óscar Pereira
 " License:      GPL
 
@@ -210,6 +209,11 @@ let s:tabStops = []
 " This function is called, inter alia, when changing (e.g., :edit'ing) to a
 " file with a different filetype.
 function snipper#BuildSnippetDict()
+  if isdirectory(g:snipper#snippets_dir) == v:false
+    echoerr  "vim-snipper: Snippet directory not found!!"
+    return ""
+  endif
+
   " First, check if we have read global snippets. If we haven't, then, parse
   " them now.
   if has_key(g:snipper#snippets, s:global_key) == v:false &&
