@@ -33,7 +33,7 @@ License: GPL
 
 ==============================================================================
 
-Table of Contents                                 *tex_seven-toc*
+Table of Contents                                 *vim_snipper-toc*
 
   1. Installation                                 |vim_snipper-installation|
   2. Snippet files                                |vim_snipper-snippets|
@@ -69,7 +69,7 @@ Table of Contents                                 *tex_seven-toc*
       *   Default: '~/.vim/snippets'.
 
   You set these, er, settings, by defining a |Dictionary| called
-  g:tex_seven_config in your |vimrc|.
+  g:snipper_config in your |vimrc|.
 
   Example:
 >
