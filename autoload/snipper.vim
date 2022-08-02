@@ -776,7 +776,7 @@ function snipper#ProcessSnippet(snip)
     " matchstrpos() function above will be '}'. Otherwise, it will be some
     " other char.
     if l:placeHolder[-1:] != '}' " There is a placeholder.
-      call add(l:placeHolders, l:placeHolder) " Eg: placeholder for ${1:arg} has index 0
+      let l:placeHolder = snipper#ProcessPassiveTabStopsInPlaceholder(l:placeHolder, l:placeHolders)
 
       " Here we take the snippet and replace ${1:placeholder} with
       " "placeholder", sans quotes (replace with any other digit for other
@@ -807,6 +807,8 @@ function snipper#ProcessSnippet(snip)
 
       " End replacing ${1:placeholder} with "placeholder", sans quotes.
 
+      call add(l:placeHolders, l:placeHolder) " Eg: placeholder for ${1:arg} has index 0
+
     else " There is no placeholder.
       call add(l:placeHolders, "") " Eg: empty placeholder for ${1} has index 0
 
@@ -818,7 +820,7 @@ function snipper#ProcessSnippet(snip)
       "   The strgetchar() function returns a *character code* (!), using the
       " current encoding. The function nr2char() converts it back to a
       " character, using utf-8 by default. As the $ character is a part of
-      " ASCII, encondings do not cause problems.
+      " ASCII, encodings do not cause problems.
       if nr2char(strgetchar(l:placeHolder, 0)) != '$'
         let l:startCharIdx += 1
       endif
@@ -914,6 +916,46 @@ function snipper#ProcessSnippet(snip)
   return snipper#ProcessSnippetPassiveTabStops(l:snippetLineList, l:placeHolders)
 endfunction
 
+" Brief: Removes (processes) passive tabstops inside the placeholder, if any.
+" They must correspond to tabstops already processed previously.
+"
+" Return: the placeholder, without any tabstops.
+function snipper#ProcessPassiveTabStopsInPlaceholder(placeholder, placeHoldersList)
+  let l:numOfPrevTabStops = len(a:placeHoldersList)
+  let l:placeholder = a:placeholder
+
+  while 1
+    let [ l:matchedText, l:startIdx, l:endIdx ] =
+          \ matchstrpos(l:placeholder, '\([^\\]\)\?\zs$\d\ze', 0)
+
+    if l:matchedText == "" && l:startIdx == -1 && l:endIdx == -1
+      " If there are no (more) matches for tabstop tsn in this line, then go
+      " check the next one.
+      break
+    endif
+
+    let l:tsnum = str2nr(l:matchedText[-1:])
+    if l:tsnum > l:numOfPrevTabStops
+      " XXX return error
+      throw "TsNumberInPlaceholderTooBig"
+    endif
+
+    let l:startCharIdx = charidx(l:placeholder, l:startIdx) " Start char idx for curr tabstop.
+    let l:endCharIdx = charidx(l:placeholder, l:endIdx)
+
+    " When the matched text ends the string, the end index is -1.
+    if l:endCharIdx != -1
+      let l:placeholder = strcharpart(l:placeholder, 0, l:startCharIdx)
+          \ . a:placeHoldersList[l:tsnum - 1] . strcharpart(l:placeholder, l:endCharIdx)
+    else
+      let l:placeholder = strcharpart(l:placeholder, 0, l:startCharIdx)
+          \ . a:placeHoldersList[l:tsnum - 1]
+    endif
+  endwhile
+
+  return l:placeholder
+endfunction
+
 function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList)
   if s:passiveTabStops != {} && s:groupedPassiveTabStopsList != []
     " When this function is called, any previous processing of any snippets
@@ -955,9 +997,16 @@ function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList
         let l:startCharIdx = charidx(l:line, l:startIdx) " Start char idx for curr tabstop.
         let l:endCharIdx = charidx(l:line, l:endIdx)
 
+        " let l:line = strcharpart(l:line, 0, l:startCharIdx)
+        "       \ . l:placeHolder . strcharpart(l:line, l:endCharIdx)
         " Replace $1 or whatever with its placeholder (i.e., ${1:placeholder}).
-        let l:line = strcharpart(l:line, 0, l:startCharIdx)
-              \ . l:placeHolder . strcharpart(l:line, l:endCharIdx)
+        if l:endCharIdx != -1
+          let l:line = strcharpart(l:line, 0, l:startCharIdx)
+                \ . l:placeHolder . strcharpart(l:line, l:endCharIdx)
+        else
+          let l:line = strcharpart(l:line, 0, l:startCharIdx)
+                \ . l:placeHolder
+        endif
 
         " Update previous passive tabstops, in the same line, to the right of
         " the current one.
