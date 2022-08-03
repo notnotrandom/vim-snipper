@@ -19,9 +19,10 @@ License: GPL
   start using the plugin!
 
   By "using", I mean the following: type a trigger (say, "for" in a *.c file),
-  hit <Tab>: the skeleton of a for loop will be shown, with the variables etc.
-  as tabstops. Type the names you want, go back and forth between tabstops
-  with <Tab> and <S-Tab>, until you are satisfied, and then it's done!
+  and hit <Tab>: the skeleton of a for loop will be shown, with the variables
+  etc. as tabstops. Type the names you want, go back and forth between
+  tabstops with <Tab> and <S-Tab>, until you are satisfied, and then it's
+  done!
 
   There is also passive completion: changing e.g. the variable name once, will
   change it in the other places where it shows up. All in all, I strived to
@@ -71,7 +72,7 @@ Table of Contents                                 *vim_snipper-toc*
   You set these, er, settings, by defining a |Dictionary| called
   g:snipper_config in your |vimrc|.
 
-  Example:
+  For example, to enable debug and change the snippets location, you could do:
 >
   let g:snipper_config = {
     \    'debug'            : 1,
