@@ -98,6 +98,13 @@ Table of Contents                                 *vim_snipper-toc*
     points to, and start using them. And then, do as I have done: modify them
     to suit your own needs.
 
+    Finally, if you are anything like me, you will end up with way too many
+    snippets to remember. No worries: you can search for available snippet
+    triggers, by hitting <C-s>, and entering the search text (and pressing
+    <Enter>). If the text is, say, "foo", the return result will be all the
+    triggers which contain the string "foo" -- including both filetype
+    specific snippets, and the general purpose snippets in _.snippets.
+
 ==============================================================================
 
 vim:tw=78:ts=8:ft=help:norl
