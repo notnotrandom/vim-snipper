@@ -776,7 +776,10 @@ function snipper#ProcessSnippet(snip)
     " matchstrpos() function above will be '}'. Otherwise, it will be some
     " other char.
     if l:placeHolder[-1:] != '}' " There is a placeholder.
-      let l:placeHolder = snipper#ProcessPassiveTabStopsInPlaceholder(l:placeHolder, l:placeHolders)
+
+      " First, deal with passive tabstops inside the placeholder, if any.
+      let l:placeHolder =
+            \ snipper#ProcessPassiveTabStopsInPlaceholder(l:placeHolder, l:placeHolders)
 
       " Here we take the snippet and replace ${1:placeholder} with
       " "placeholder", sans quotes (replace with any other digit for other
@@ -936,7 +939,10 @@ function snipper#ProcessPassiveTabStopsInPlaceholder(placeholder, placeHoldersLi
 
     let l:tsnum = str2nr(l:matchedText[-1:])
     if l:tsnum > l:numOfPrevTabStops
-      " XXX return error
+      if g:snipper_debug |
+            \ echomsg "In function snipper#ProcessPassiveTabStopsInPlaceholder(): " .
+            \ "Found passive tabstop num " . l:tsnum .
+            \ " in placeholder, but it is too big!" | endif
       throw "TsNumberInPlaceholderTooBig"
     endif
 
@@ -1480,8 +1486,14 @@ function snipper#TriggerSnippet()
     " We have NOT seen this snippet before, so on we go with processing it.
     " The snipper#ProcessSnippet() function will set the s:tabStops
     " variable.
-    let l:triggerExpansion =
-          \ snipper#ProcessSnippet(g:snipper#snippets[l:key][l:trigger])
+    let l:triggerExpansion = v:none
+    try
+      let l:triggerExpansion =
+            \ snipper#ProcessSnippet(g:snipper#snippets[l:key][l:trigger])
+    catch /^TsNumberInPlaceholderTooBig$/
+      echoerr "Found placeholder with tabstop nr bigger than current one!"
+      return ""
+    endtry
 
     " Save the information resulting from the processing of the snippet,
     " to use if we have to expand the same snippet again in the future.
