@@ -662,6 +662,49 @@ function snipper#ParseSnippetFile(snipFile, filetype)
   endif
 endfunction
 
+" Brief: Removes (processes) passive tabstops inside the placeholder, if any.
+" They must correspond to tabstops already processed previously.
+"
+" Return: the placeholder, without any tabstops.
+function snipper#ProcessPassiveTabStopsInPlaceholder(placeholder, placeHoldersList)
+  let l:numOfPrevTabStops = len(a:placeHoldersList)
+  let l:placeholder = a:placeholder
+
+  while 1
+    let [ l:matchedText, l:startIdx, l:endIdx ] =
+          \ matchstrpos(l:placeholder, '\([^\\]\)\?\zs$\d\ze', 0)
+
+    if l:matchedText == "" && l:startIdx == -1 && l:endIdx == -1
+      " If there are no (more) matches for tabstop tsn in this line, then go
+      " check the next one.
+      break
+    endif
+
+    let l:tsnum = str2nr(l:matchedText[-1:])
+    if l:tsnum > l:numOfPrevTabStops
+      if g:snipper_debug |
+            \ echomsg "In function snipper#ProcessPassiveTabStopsInPlaceholder(): " .
+            \ "Found passive tabstop num " . l:tsnum .
+            \ " in placeholder, but it is too big!" | endif
+      throw "TsNumberInPlaceholderTooBig"
+    endif
+
+    let l:startCharIdx = charidx(l:placeholder, l:startIdx) " Start char idx for curr tabstop.
+    let l:endCharIdx = charidx(l:placeholder, l:endIdx)
+
+    " When the matched text ends the string, the end index is -1.
+    if l:endCharIdx != -1
+      let l:placeholder = strcharpart(l:placeholder, 0, l:startCharIdx)
+          \ . a:placeHoldersList[l:tsnum - 1] . strcharpart(l:placeholder, l:endCharIdx)
+    else
+      let l:placeholder = strcharpart(l:placeholder, 0, l:startCharIdx)
+          \ . a:placeHoldersList[l:tsnum - 1]
+    endif
+  endwhile
+
+  return l:placeholder
+endfunction
+
 " Brief: This function sets the s:tabStops variable with the information for
 " the a:snip snippet. It also expands the snippet (see Return: below).
 "
@@ -917,49 +960,6 @@ function snipper#ProcessSnippet(snip)
   endfor
 
   return snipper#ProcessSnippetPassiveTabStops(l:snippetLineList, l:placeHolders)
-endfunction
-
-" Brief: Removes (processes) passive tabstops inside the placeholder, if any.
-" They must correspond to tabstops already processed previously.
-"
-" Return: the placeholder, without any tabstops.
-function snipper#ProcessPassiveTabStopsInPlaceholder(placeholder, placeHoldersList)
-  let l:numOfPrevTabStops = len(a:placeHoldersList)
-  let l:placeholder = a:placeholder
-
-  while 1
-    let [ l:matchedText, l:startIdx, l:endIdx ] =
-          \ matchstrpos(l:placeholder, '\([^\\]\)\?\zs$\d\ze', 0)
-
-    if l:matchedText == "" && l:startIdx == -1 && l:endIdx == -1
-      " If there are no (more) matches for tabstop tsn in this line, then go
-      " check the next one.
-      break
-    endif
-
-    let l:tsnum = str2nr(l:matchedText[-1:])
-    if l:tsnum > l:numOfPrevTabStops
-      if g:snipper_debug |
-            \ echomsg "In function snipper#ProcessPassiveTabStopsInPlaceholder(): " .
-            \ "Found passive tabstop num " . l:tsnum .
-            \ " in placeholder, but it is too big!" | endif
-      throw "TsNumberInPlaceholderTooBig"
-    endif
-
-    let l:startCharIdx = charidx(l:placeholder, l:startIdx) " Start char idx for curr tabstop.
-    let l:endCharIdx = charidx(l:placeholder, l:endIdx)
-
-    " When the matched text ends the string, the end index is -1.
-    if l:endCharIdx != -1
-      let l:placeholder = strcharpart(l:placeholder, 0, l:startCharIdx)
-          \ . a:placeHoldersList[l:tsnum - 1] . strcharpart(l:placeholder, l:endCharIdx)
-    else
-      let l:placeholder = strcharpart(l:placeholder, 0, l:startCharIdx)
-          \ . a:placeHoldersList[l:tsnum - 1]
-    endif
-  endwhile
-
-  return l:placeholder
 endfunction
 
 function snipper#ProcessSnippetPassiveTabStops(snippetLineList, placeHoldersList)
@@ -1658,6 +1658,7 @@ function snipper#UpdateSnippet(tabStopNum, text = '')
       " strgetchar() returns a decimal number for char, which nr2char() converts
       " to a char proper.
       let l:insertedChar = nr2char(strgetchar(l:line, l:curCol-2))
+      echom "inserted char " . l:insertedChar
     endif
     let s:curCol = l:curCol
 
@@ -1807,6 +1808,8 @@ function snipper#UpdateState(idxForLine, idxForCursor)
   " containing non-ASCII characters.
   let l:currLineInsertionPos = snipper#OffsetForCurrLine(a:idxForLine)
   let s:cursorStartPos = l:currLineInsertionPos + a:idxForCursor
+  echom "set cur start pos to " . s:cursorStartPos
+  echom "with idxForCursor " . a:idxForCursor
 endfunction
 
 function snipper#CompletionDone(tabStopNum)
